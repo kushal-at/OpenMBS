@@ -442,7 +442,6 @@ impl BuildingSpec {
             }
         }
 
-
         for lt in &self.lean_tos {
             if lt.span_m <= 0.0 || lt.eave_height_m <= 0.0 || lt.bay_count == 0 {
                 return Err(format!("Lean-to {} has non-positive geometry", lt.id));
@@ -466,7 +465,10 @@ impl BuildingSpec {
         }
         for cr in &self.cranes {
             if cr.capacity_metric_tons <= 0.0 || cr.runway_height_m <= 0.0 {
-                return Err(format!("Crane {} has non-positive capacity or height", cr.id));
+                return Err(format!(
+                    "Crane {} has non-positive capacity or height",
+                    cr.id
+                ));
             }
             if cr.runway_height_m > self.left_eave_m.min(self.right_eave_m) {
                 return Err(format!("Crane {} runway is higher than column eave", cr.id));
@@ -474,7 +476,10 @@ impl BuildingSpec {
         }
         for pf in &self.portal_frames {
             if pf.bay_index >= self.bay_lengths_m.len() {
-                return Err(format!("Portal frame bay {} out of range", pf.bay_index + 1));
+                return Err(format!(
+                    "Portal frame bay {} out of range",
+                    pf.bay_index + 1
+                ));
             }
         }
 

@@ -1,6 +1,7 @@
 /target/
 /.tools/
 /.research_work/
+/MBS_COMPLETE_RESEARCH/
 /*.zip
 /output/
 /*.openmbs.json

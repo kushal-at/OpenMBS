@@ -2,22 +2,50 @@
 
 use eframe::egui::{self, Color32, Pos2, RichText, Stroke, Vec2};
 use openmbs_core::{
-    codes::{DesignMethod, EnclosureClass, RiskCategory, WindExposure},
-    geometry::{EndwallType, WallOpening, WallSide},
-    inventory::AnchorSupplyScope,
-    peb::{EngineeringProject, EngineeringRun, export_peb_bundle, optimize_peb_frame, process_peb},
+    codes::{
+        DesignMethod, EnclosureClass, RiskCategory, WindExposure, generate_pe_certification_letter,
+    },
+    geometry::{
+        CanopySpec, CraneSpec, EndwallType, LeanToSpec, ParapetSpec, WallOpening, WallSide,
+    },
+    inventory::{AnchorSupplyScope, dbcheck},
+    peb::{
+        EngineeringProject, EngineeringRun, export_peb_bundle, format_verify_report,
+        optimize_peb_frame, process_peb,
+    },
     storage::atomic_write,
     units::{Length, Pressure, Speed, UnitSystem},
 };
 use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MbsTab {
+    Shape,
+    BaySpacing,
+    CodesLoads,
+    RigidFrames,
+    Openings,
+    Extensions,
+    Inventory,
+    Costing,
+    DrawingSheets,
+    VerifyReports,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ViewportMode {
+    Isometric3D,
+    Elevation2D,
+    RoofPlan2D,
+}
 
 struct App {
     project: EngineeringProject,
     saved_snapshot: EngineeringProject,
     run: Option<EngineeringRun>,
     path: Option<PathBuf>,
-    input_tab: usize,
-    output_tab: usize,
+    active_tab: MbsTab,
+    view_mode: ViewportMode,
     message: String,
     undo: Vec<EngineeringProject>,
     redo: Vec<EngineeringProject>,
@@ -35,9 +63,10 @@ impl Default for App {
             project,
             run: None,
             path: None,
-            input_tab: 0,
-            output_tab: 0,
-            message: "Ready. Edit PEB inputs or click Auto-Size / Calculate.".into(),
+            active_tab: MbsTab::Shape,
+            view_mode: ViewportMode::Isometric3D,
+            message: "OpenMBS ready. Configure building tabs or click Auto-Size / Calculate."
+                .into(),
             undo: vec![],
             redo: vec![],
             yaw: 0.62,
@@ -103,18 +132,13 @@ fn num_kpa_field(
 fn num_f64(
     ui: &mut egui::Ui,
     label: &str,
-    value: &mut f64,
+    val: &mut f64,
     range: std::ops::RangeInclusive<f64>,
     speed: f64,
 ) {
     ui.horizontal(|ui| {
         ui.label(label);
-        ui.add(
-            egui::DragValue::new(value)
-                .range(range)
-                .speed(speed)
-                .max_decimals(3),
-        );
+        ui.add(egui::DragValue::new(val).range(range).speed(speed));
     });
 }
 
@@ -123,30 +147,36 @@ impl App {
         self.project != self.saved_snapshot
     }
 
-    fn may_discard(&self) -> bool {
-        !self.dirty()
-            || rfd::MessageDialog::new()
-                .set_title("Unsaved OpenMBS changes")
-                .set_description("Discard unsaved project changes? Choose No to save first.")
-                .set_buttons(rfd::MessageButtons::YesNo)
-                .show()
-                == rfd::MessageDialogResult::Yes
+    fn may_discard(&mut self) -> bool {
+        if !self.dirty() {
+            return true;
+        }
+        let confirm = rfd::MessageDialog::new()
+            .set_title("Unsaved Changes")
+            .set_description("You have unsaved changes. Discard them?")
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show();
+        confirm == rfd::MessageDialogResult::Yes
     }
 
     fn process(&mut self) {
         match process_peb(&self.project) {
-            Ok(r) => {
+            Ok(run) => {
+                let max_ratio = run.max_aisc_ratio;
+                let max_drift = run.max_drift_ratio;
+                self.run = Some(run);
                 self.message = format!(
-                    "Solved ASCE 7-22 / AISC 360-16: Max Unity {:.3} | Drift/Limit {:.3} | Clashes {}",
-                    r.max_aisc_ratio,
-                    r.max_drift_ratio,
-                    r.detail.clashes.len()
+                    "Calculated: Max AISC Unity = {:.3} | Drift = H/{:.0}",
+                    max_ratio,
+                    if max_drift > 1e-9 {
+                        1.0 / max_drift
+                    } else {
+                        1000.0
+                    }
                 );
-                self.run = Some(r);
             }
             Err(e) => {
-                self.run = None;
-                self.message = e;
+                self.message = format!("Calculation Error: {e}");
             }
         }
     }
@@ -157,9 +187,9 @@ impl App {
                 self.project.column_section_id = col.clone();
                 self.project.rafter_section_id = raf;
                 self.process();
-                self.message = format!("Auto-sized frame section: {col}");
+                self.message = format!("Auto-sized frame sections: {col}");
             }
-            Err(e) => self.message = e,
+            Err(e) => self.message = format!("Auto-Size Error: {e}"),
         }
     }
 
@@ -179,10 +209,10 @@ impl App {
             match res {
                 Ok(()) => {
                     self.saved_snapshot = self.project.clone();
-                    self.message = format!("Saved {}", path.display());
+                    self.message = format!("Saved to {}", path.display());
                     self.path = Some(path);
                 }
-                Err(e) => self.message = e,
+                Err(e) => self.message = format!("Save Error: {e}"),
             }
         }
     }
@@ -213,9 +243,9 @@ impl App {
                     self.saved_snapshot = p;
                     self.path = Some(path);
                     self.run = None;
-                    self.message = "Project loaded.".into();
+                    self.message = "Project loaded successfully.".into();
                 }
-                Err(e) => self.message = e,
+                Err(e) => self.message = format!("Open Error: {e}"),
             }
         }
     }
@@ -240,58 +270,140 @@ impl App {
                 .as_millis();
             let path = parent.join(format!("openmbs-peb-{}-{stamp}", &r.revision[..8]));
             self.message = match export_peb_bundle(&self.project, r, &path) {
-                Ok(()) => format!("Exported IFC4, SVG/DXF, Verify & BOM to {}", path.display()),
-                Err(e) => e,
+                Ok(()) => format!(
+                    "Exported IFC4, DXF, SVGs, Verify & BOM to {}",
+                    path.display()
+                ),
+                Err(e) => format!("Export Error: {e}"),
             };
         }
     }
 
-    fn draw_inputs(&mut self, ui: &mut egui::Ui) {
+    fn draw_tab_content(&mut self, ui: &mut egui::Ui) {
         let sys = self.project.unit_system;
-        match self.input_tab {
-            0 => {
-                ui.heading("Building Shape & Bays");
-                ui.label("Project");
+        match self.active_tab {
+            MbsTab::Shape => {
+                ui.heading("Shape (UI-0002: Building Geometry)");
+                ui.label("Project Name:");
                 ui.text_edit_singleline(&mut self.project.name);
-                ui.label("Customer");
+                ui.label("Customer / Account:");
                 ui.text_edit_singleline(&mut self.project.customer);
                 ui.separator();
 
+                ui.label("Quick Geometry Presets:");
+                ui.horizontal(|ui| {
+                    if ui.button("Standard 80x120 ft").clicked() {
+                        self.project.building.width_m = 24.384;
+                        self.project.building.bay_lengths_m = vec![6.096; 6];
+                        self.project.building.left_eave_m = 6.096;
+                        self.project.building.right_eave_m = 6.096;
+                        self.project.building.ridge_x_m = 12.192;
+                        self.project.building.ridge_height_m = 7.112;
+                    }
+                    if ui.button("Single Slope 60x100 ft").clicked() {
+                        self.project.building.width_m = 18.288;
+                        self.project.building.bay_lengths_m = vec![6.096; 5];
+                        self.project.building.left_eave_m = 4.876;
+                        self.project.building.right_eave_m = 6.705;
+                        self.project.building.ridge_x_m = 18.288;
+                        self.project.building.ridge_height_m = 6.705;
+                    }
+                });
+                ui.separator();
+
                 let b = &mut self.project.building;
-                num_m_field(ui, "Width", &mut b.width_m, sys, 2.0..=200.0);
-                num_m_field(ui, "Left eave", &mut b.left_eave_m, sys, 2.0..=50.0);
-                num_m_field(ui, "Right eave", &mut b.right_eave_m, sys, 2.0..=50.0);
-                num_m_field(ui, "Ridge X", &mut b.ridge_x_m, sys, 0.5..=199.5);
-                num_m_field(ui, "Ridge height", &mut b.ridge_height_m, sys, 2.0..=60.0);
-                ui.checkbox(&mut b.fixed_bases, "Fixed column bases");
+                num_m_field(
+                    ui,
+                    "Building Width (Transverse Span)",
+                    &mut b.width_m,
+                    sys,
+                    2.0..=200.0,
+                );
+                num_m_field(
+                    ui,
+                    "Left Sidewall Eave Height",
+                    &mut b.left_eave_m,
+                    sys,
+                    2.0..=50.0,
+                );
+                num_m_field(
+                    ui,
+                    "Right Sidewall Eave Height",
+                    &mut b.right_eave_m,
+                    sys,
+                    2.0..=50.0,
+                );
+                num_m_field(
+                    ui,
+                    "Peak Offset (Ridge X from Left)",
+                    &mut b.ridge_x_m,
+                    sys,
+                    0.5..=199.5,
+                );
+                num_m_field(
+                    ui,
+                    "Peak / Ridge Elevation",
+                    &mut b.ridge_height_m,
+                    sys,
+                    2.0..=60.0,
+                );
+
+                let slope = b.left_slope();
+                ui.label(format!(
+                    "Calculated Roof Pitch: {:.2}:12 ({:.1} deg)",
+                    slope * 12.0,
+                    slope.atan().to_degrees()
+                ));
+
+                ui.separator();
+                ui.checkbox(
+                    &mut b.fixed_bases,
+                    "Fixed Column Bases (unchecked = Pinned)",
+                );
 
                 ui.horizontal(|ui| {
-                    ui.label("Endwall:");
+                    ui.label("Endwall Framing Type:");
                     ui.selectable_value(
                         &mut b.endwall_type,
                         EndwallType::PostAndBeam,
-                        "Post & Beam",
+                        "Post & Beam (Bearing)",
                     );
                     ui.selectable_value(
                         &mut b.endwall_type,
                         EndwallType::ExpandableRigidFrame,
-                        "Rigid Frame",
+                        "Expandable Rigid Frame",
                     );
                 });
+                ui.add(
+                    egui::Slider::new(&mut b.endwall_post_bays, 1..=12).text("Endwall Post Bays"),
+                );
+            }
 
-                ui.separator();
+            MbsTab::BaySpacing => {
+                ui.heading("Bay Spacing (UI-0003 & UI-0004)");
+                let b = &mut self.project.building;
+                let total_len = b.total_length_m();
                 ui.label(format!(
-                    "Bay Spacing ({} bays, total {:.2} {})",
-                    b.bay_lengths_m.len(),
-                    Length::from_m(b.total_length_m()).in_system(sys),
-                    sys.length_unit()
+                    "Total Building Length: {:.2} {} across {} bays",
+                    Length::from_m(total_len).in_system(sys),
+                    sys.length_unit(),
+                    b.bay_lengths_m.len()
                 ));
-                let mut remove_bay = None;
-                let can_remove_bay = b.bay_lengths_m.len() > 1;
-                for (i, bay_m) in b.bay_lengths_m.iter_mut().enumerate() {
-                    ui.horizontal(|ui| {
-                        let mut disp = Length::from_m(*bay_m).in_system(sys);
-                        ui.label(format!("Bay {} ({})", i + 1, sys.length_unit()));
+                ui.separator();
+
+                ui.label("Roof Bay Spacing Table:");
+                egui::Grid::new("bay_table").striped(true).show(ui, |ui| {
+                    ui.strong("Bay #");
+                    ui.strong(format!("Length ({})", sys.length_unit()));
+                    ui.strong("X-Brace");
+                    ui.strong("Action");
+                    ui.end_row();
+
+                    let mut remove_idx = None;
+                    let can_remove = b.bay_lengths_m.len() > 1;
+                    for (i, bay_len) in b.bay_lengths_m.iter_mut().enumerate() {
+                        ui.label(format!("Bay {}", i + 1));
+                        let mut disp = Length::from_m(*bay_len).in_system(sys);
                         if ui
                             .add(
                                 egui::DragValue::new(&mut disp)
@@ -300,143 +412,111 @@ impl App {
                             )
                             .changed()
                         {
-                            *bay_m = Length::from_system(disp, sys).m().clamp(0.5, 50.0);
+                            *bay_len = Length::from_system(disp, sys).m().clamp(0.5, 50.0);
                         }
-                        let mut braced = b.braced_bays.contains(&i);
-                        if ui.checkbox(&mut braced, "X-Brace").changed() {
-                            if braced {
+
+                        let mut is_braced = b.braced_bays.contains(&i);
+                        if ui.checkbox(&mut is_braced, "").changed() {
+                            if is_braced {
                                 b.braced_bays.push(i);
                             } else {
                                 b.braced_bays.retain(|&x| x != i);
                             }
                         }
-                        if can_remove_bay && ui.small_button("x").clicked() {
-                            remove_bay = Some(i);
+
+                        if can_remove && ui.small_button("Delete").clicked() {
+                            remove_idx = Some(i);
                         }
-                    });
-                }
-                if let Some(idx) = remove_bay {
-                    b.bay_lengths_m.remove(idx);
-                    b.braced_bays.retain(|&x| x < b.bay_lengths_m.len());
-                }
-                if b.bay_lengths_m.len() < 100 && ui.button("+ Add Bay").clicked() {
+                        ui.end_row();
+                    }
+
+                    if let Some(idx) = remove_idx {
+                        b.bay_lengths_m.remove(idx);
+                        b.braced_bays.retain(|&x| x < b.bay_lengths_m.len());
+                    }
+                });
+
+                if b.bay_lengths_m.len() < 100 && ui.button("+ Insert Bay").clicked() {
                     let last = *b.bay_lengths_m.last().unwrap_or(&6.0);
                     b.bay_lengths_m.push(last);
                 }
 
                 ui.separator();
+                ui.heading("Secondary Framing Layout");
                 num_m_field(
                     ui,
-                    "Purlin spacing",
+                    "Roof Purlin Spacing o.c.",
                     &mut b.purlin_spacing_m,
                     sys,
-                    0.3..=6.0,
+                    0.3..=4.0,
                 );
-                num_m_field(ui, "Girt spacing", &mut b.girt_spacing_m, sys, 0.3..=6.0);
                 num_m_field(
                     ui,
-                    "Flange brace Lb",
+                    "Purlin Lap Length Allowance",
+                    &mut b.purlin_lap_m,
+                    sys,
+                    0.0..=2.0,
+                );
+                num_m_field(
+                    ui,
+                    "Sidewall Girt Spacing o.c.",
+                    &mut b.girt_spacing_m,
+                    sys,
+                    0.3..=4.0,
+                );
+                num_m_field(
+                    ui,
+                    "Flange Brace Unbraced Length Lb",
                     &mut b.flange_brace_spacing_m,
                     sys,
-                    0.5..=15.0,
+                    0.5..=10.0,
                 );
-
-                ui.separator();
-                ui.label("4-Wall Openings");
-                let mut remove_op = None;
-                for (i, o) in b.openings.iter_mut().enumerate() {
-                    ui.push_id(i, |ui| {
-                        ui.collapsing(format!("{} ({})", o.id, o.wall.as_str()), |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                for (w, lbl) in [
-                                    (WallSide::LeftSidewall, "Left"),
-                                    (WallSide::RightSidewall, "Right"),
-                                    (WallSide::FrontEndwall, "Front"),
-                                    (WallSide::BackEndwall, "Back"),
-                                ] {
-                                    ui.selectable_value(&mut o.wall, w, lbl);
-                                }
-                            });
-                            num_m_field(ui, "Offset", &mut o.offset_m, sys, 0.0..=900.0);
-                            num_m_field(ui, "Sill", &mut o.sill_m, sys, 0.0..=50.0);
-                            num_m_field(ui, "Width", &mut o.width_m, sys, 0.3..=50.0);
-                            num_m_field(ui, "Height", &mut o.height_m, sys, 0.3..=40.0);
-                            ui.checkbox(&mut o.shop_framed, "Shop-framed jambs & header");
-                            if ui.button("Remove").clicked() {
-                                remove_op = Some(i);
-                            }
-                        });
-                    });
-                }
-                if let Some(idx) = remove_op {
-                    b.openings.remove(idx);
-                }
-                if ui.button("+ Add Opening").clicked() {
-                    let next = b.openings.len() + 1;
-                    b.openings.push(WallOpening {
-                        id: format!("D{next}"),
-                        wall: WallSide::LeftSidewall,
-                        offset_m: 1.0,
-                        sill_m: 0.0,
-                        width_m: 3.0,
-                        height_m: 3.5,
-                        shop_framed: true,
-                    });
-                }
             }
-            1 => {
-                ui.heading("ASCE 7-22 Code Loads");
+
+            MbsTab::CodesLoads => {
+                ui.heading("Code, Loads (UI-0006)");
                 let h = &mut self.project.hazard;
+
                 ui.horizontal(|ui| {
-                    ui.label("Method:");
-                    ui.selectable_value(&mut h.design_method, DesignMethod::LRFD, "LRFD");
-                    ui.selectable_value(&mut h.design_method, DesignMethod::ASD, "ASD");
+                    ui.label("Design Method:");
+                    ui.selectable_value(
+                        &mut h.design_method,
+                        DesignMethod::LRFD,
+                        "LRFD (AISC 360-16)",
+                    );
+                    ui.selectable_value(
+                        &mut h.design_method,
+                        DesignMethod::ASD,
+                        "ASD (AISC 360-16)",
+                    );
                 });
+
                 ui.horizontal(|ui| {
-                    ui.label("Risk Cat:");
-                    for (rc, lbl) in [
-                        (RiskCategory::I, "I"),
-                        (RiskCategory::II, "II"),
-                        (RiskCategory::III, "III"),
-                        (RiskCategory::IV, "IV"),
-                    ] {
-                        ui.selectable_value(&mut h.risk_category, rc, lbl);
-                    }
+                    ui.label("Risk Category:");
+                    ui.selectable_value(&mut h.risk_category, RiskCategory::I, "I (Ag)");
+                    ui.selectable_value(&mut h.risk_category, RiskCategory::II, "II (Standard)");
+                    ui.selectable_value(&mut h.risk_category, RiskCategory::III, "III (Assembly)");
+                    ui.selectable_value(&mut h.risk_category, RiskCategory::IV, "IV (Essential)");
                 });
+
                 ui.checkbox(
                     &mut self.project.second_order_pdelta,
-                    "Enable 2nd-order P-Delta analysis",
+                    "Iterative 2nd-Order P-Delta Analysis",
                 );
                 ui.checkbox(
                     &mut h.auto_frame_self_weight,
-                    "Auto primary steel self-weight",
+                    "Automatic Frame Self-Weight Addition",
                 );
+
                 ui.separator();
-                num_kpa_field(
-                    ui,
-                    "Roof Dead + Panel",
-                    &mut h.roof_dead_superimposed_kpa,
-                    sys,
-                    0.0..=10.0,
-                );
-                num_kpa_field(ui, "Collateral", &mut h.collateral_kpa, sys, 0.0..=10.0);
-                num_kpa_field(ui, "Roof Live Lr", &mut h.roof_live_lr_kpa, sys, 0.0..=10.0);
-                num_kpa_field(
-                    ui,
-                    "Ground Snow pg",
-                    &mut h.ground_snow_pg_kpa,
-                    sys,
-                    0.0..=20.0,
-                );
-                ui.checkbox(&mut h.slippery_roof, "Slippery roof (snow slope factor)");
-                ui.separator();
+                ui.strong("Environmental & Hazard Loads (ASCE 7-22):");
                 let mut v_disp = Speed::from_mps(h.wind_speed_mps).in_system(sys);
                 ui.horizontal(|ui| {
-                    ui.label(format!("Wind Speed V ({})", sys.speed_unit()));
+                    ui.label(format!("Basic Wind Speed V ({})", sys.speed_unit()));
                     if ui
                         .add(
                             egui::DragValue::new(&mut v_disp)
-                                .range(20.0..=250.0)
+                                .range(30.0..=250.0)
                                 .speed(1.0),
                         )
                         .changed()
@@ -447,77 +527,405 @@ impl App {
                         };
                     }
                 });
+
                 ui.horizontal(|ui| {
-                    ui.label("Exposure:");
-                    ui.selectable_value(&mut h.wind_exposure, WindExposure::B, "B");
-                    ui.selectable_value(&mut h.wind_exposure, WindExposure::C, "C");
-                    ui.selectable_value(&mut h.wind_exposure, WindExposure::D, "D");
+                    ui.label("Terrain Exposure:");
+                    ui.selectable_value(
+                        &mut h.wind_exposure,
+                        WindExposure::B,
+                        "B (Urban/Suburban)",
+                    );
+                    ui.selectable_value(&mut h.wind_exposure, WindExposure::C, "C (Open Terrain)");
+                    ui.selectable_value(&mut h.wind_exposure, WindExposure::D, "D (Flat Coast)");
                 });
+
                 ui.horizontal(|ui| {
-                    ui.label("Enclosure:");
-                    ui.selectable_value(&mut h.enclosure, EnclosureClass::Enclosed, "Enclosed");
+                    ui.label("Building Enclosure:");
+                    ui.selectable_value(
+                        &mut h.enclosure,
+                        EnclosureClass::Enclosed,
+                        "Enclosed (GCpi = +/-0.18)",
+                    );
                     ui.selectable_value(
                         &mut h.enclosure,
                         EnclosureClass::PartiallyEnclosed,
-                        "Partial",
+                        "Partially Enclosed (GCpi = +/-0.55)",
                     );
                 });
-                num_f64(ui, "Seismic Sds (g)", &mut h.seismic_sds, 0.0..=2.5, 0.02);
-                num_f64(ui, "Seismic R", &mut h.seismic_r_factor, 1.0..=8.0, 0.25);
+
+                num_kpa_field(
+                    ui,
+                    "Ground Snow Load pg",
+                    &mut h.ground_snow_pg_kpa,
+                    sys,
+                    0.0..=15.0,
+                );
+                ui.checkbox(&mut h.slippery_roof, "Slippery Roof Surface (Cs reduction)");
+                num_kpa_field(
+                    ui,
+                    "Roof Live Load Lr",
+                    &mut h.roof_live_lr_kpa,
+                    sys,
+                    0.0..=5.0,
+                );
+                num_kpa_field(
+                    ui,
+                    "Superimposed Dead Load",
+                    &mut h.roof_dead_superimposed_kpa,
+                    sys,
+                    0.0..=5.0,
+                );
+                num_kpa_field(
+                    ui,
+                    "Collateral Load (Ceilings/Pipes)",
+                    &mut h.collateral_kpa,
+                    sys,
+                    0.0..=5.0,
+                );
+
+                ui.separator();
+                ui.strong("Seismic Equivalent Lateral Force Parameters:");
+                num_f64(
+                    ui,
+                    "Spectral Acceleration Sds (g)",
+                    &mut h.seismic_sds,
+                    0.0..=3.0,
+                    0.05,
+                );
+                num_f64(
+                    ui,
+                    "Spectral Acceleration Sd1 (g)",
+                    &mut h.seismic_sd1,
+                    0.0..=1.5,
+                    0.02,
+                );
+                num_f64(
+                    ui,
+                    "Response Modification Factor R",
+                    &mut h.seismic_r_factor,
+                    1.0..=8.0,
+                    0.5,
+                );
             }
-            2 => {
-                ui.heading("Sections, DB & Finishes");
-                ui.label("Column Built-Up Section");
-                for s in &self.project.database.built_up_sections {
+
+            MbsTab::RigidFrames => {
+                ui.heading("Rigid Frames (UI-0005)");
+                ui.label("Select Frame Sections from Manufacturer Inventory:");
+
+                ui.horizontal(|ui| {
+                    ui.label("Column Shape:");
+                    egui::ComboBox::from_id_salt("col_combo")
+                        .selected_text(&self.project.column_section_id)
+                        .show_ui(ui, |ui| {
+                            for s in &self.project.database.built_up_sections {
+                                ui.selectable_value(
+                                    &mut self.project.column_section_id,
+                                    s.id.clone(),
+                                    format!(
+                                        "{} (d={:.0}->{:.0}mm)",
+                                        s.id,
+                                        s.depth_start_m * 1000.0,
+                                        s.depth_end_m * 1000.0
+                                    ),
+                                );
+                            }
+                        });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Rafter Shape:");
+                    egui::ComboBox::from_id_salt("raf_combo")
+                        .selected_text(&self.project.rafter_section_id)
+                        .show_ui(ui, |ui| {
+                            for s in &self.project.database.built_up_sections {
+                                ui.selectable_value(
+                                    &mut self.project.rafter_section_id,
+                                    s.id.clone(),
+                                    format!(
+                                        "{} (d={:.0}->{:.0}mm)",
+                                        s.id,
+                                        s.depth_start_m * 1000.0,
+                                        s.depth_end_m * 1000.0
+                                    ),
+                                );
+                            }
+                        });
+                });
+
+                ui.separator();
+                ui.strong("Connection Detailing Standards:");
+                ui.label("• Eave Knee & Ridge Splice: AISC Design Guide 4 Bolted Moment End-Plate");
+                ui.label("• Column Base Plate: AISC Design Guide 1 Base Plate & Anchor Rods");
+
+                ui.horizontal(|ui| {
+                    ui.label("Anchor Bolt Supply Scope (DM81):");
                     ui.selectable_value(
-                        &mut self.project.column_section_id,
-                        s.id.clone(),
-                        format!(
-                            "{} ({:.0}->{:.0}mm)",
-                            s.id,
-                            s.depth_start_m * 1000.0,
-                            s.depth_end_m * 1000.0
-                        ),
+                        &mut self.project.anchor_scope,
+                        AnchorSupplyScope::ByManufacturer,
+                        "By Manufacturer",
                     );
-                }
-                ui.separator();
-                ui.label("Rafter Built-Up Section");
-                for s in &self.project.database.built_up_sections {
                     ui.selectable_value(
-                        &mut self.project.rafter_section_id,
-                        s.id.clone(),
-                        format!(
-                            "{} ({:.0}->{:.0}mm)",
-                            s.id,
-                            s.depth_start_m * 1000.0,
-                            s.depth_end_m * 1000.0
-                        ),
+                        &mut self.project.anchor_scope,
+                        AnchorSupplyScope::ByOthers,
+                        "By Others",
                     );
+                });
+
+                ui.separator();
+                if ui
+                    .button(
+                        RichText::new("⚡ Run Discrete Frame Auto-Sizer")
+                            .color(Color32::from_rgb(56, 189, 248)),
+                    )
+                    .clicked()
+                {
+                    self.auto_size();
                 }
+            }
+
+            MbsTab::Openings => {
+                ui.heading("4-Wall Openings (UI-0007 / UI-0008)");
+                ui.label("Standard Wall Openings with Automatic Girt Trimming:");
+
+                ui.label("Quick Preset Add:");
+                ui.horizontal(|ui| {
+                    if ui.button("+ 12x14 Overhead Door").clicked() {
+                        let id = format!("OHD{}", self.project.building.openings.len() + 1);
+                        self.project.building.openings.push(WallOpening {
+                            id,
+                            wall: WallSide::LeftSidewall,
+                            offset_m: 6.0,
+                            sill_m: 0.0,
+                            width_m: 3.658,
+                            height_m: 4.267,
+                            shop_framed: true,
+                        });
+                    }
+                    if ui.button("+ 3x7 Walk Door").clicked() {
+                        let id = format!("MAN{}", self.project.building.openings.len() + 1);
+                        self.project.building.openings.push(WallOpening {
+                            id,
+                            wall: WallSide::LeftSidewall,
+                            offset_m: 2.0,
+                            sill_m: 0.0,
+                            width_m: 0.914,
+                            height_m: 2.134,
+                            shop_framed: true,
+                        });
+                    }
+                    if ui.button("+ 4x3 Window").clicked() {
+                        let id = format!("WIN{}", self.project.building.openings.len() + 1);
+                        self.project.building.openings.push(WallOpening {
+                            id,
+                            wall: WallSide::FrontEndwall,
+                            offset_m: 3.0,
+                            sill_m: 1.2,
+                            width_m: 1.219,
+                            height_m: 0.914,
+                            shop_framed: false,
+                        });
+                    }
+                });
+
                 ui.separator();
-                ui.label("Roof Purlin Profile (AISI S100)");
-                for p in &self.project.database.cold_formed_profiles {
-                    ui.selectable_value(&mut self.project.purlin_profile_id, p.id.clone(), &p.id);
+                let b = &mut self.project.building;
+                let mut remove_op = None;
+                egui::Grid::new("openings_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.strong("ID");
+                        ui.strong("Wall Side");
+                        ui.strong(format!("Offset ({})", sys.length_unit()));
+                        ui.strong(format!("Width ({})", sys.length_unit()));
+                        ui.strong(format!("Height ({})", sys.length_unit()));
+                        ui.strong("Shop Framed");
+                        ui.strong("Action");
+                        ui.end_row();
+
+                        for (i, o) in b.openings.iter_mut().enumerate() {
+                            ui.text_edit_singleline(&mut o.id);
+
+                            egui::ComboBox::from_id_salt(format!("wall_{i}"))
+                                .selected_text(o.wall.as_str())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut o.wall,
+                                        WallSide::LeftSidewall,
+                                        "Left Sidewall",
+                                    );
+                                    ui.selectable_value(
+                                        &mut o.wall,
+                                        WallSide::RightSidewall,
+                                        "Right Sidewall",
+                                    );
+                                    ui.selectable_value(
+                                        &mut o.wall,
+                                        WallSide::FrontEndwall,
+                                        "Front Endwall",
+                                    );
+                                    ui.selectable_value(
+                                        &mut o.wall,
+                                        WallSide::BackEndwall,
+                                        "Back Endwall",
+                                    );
+                                });
+
+                            let mut off = Length::from_m(o.offset_m).in_system(sys);
+                            if ui.add(egui::DragValue::new(&mut off).speed(0.1)).changed() {
+                                o.offset_m = Length::from_system(off, sys).m();
+                            }
+                            let mut w = Length::from_m(o.width_m).in_system(sys);
+                            if ui.add(egui::DragValue::new(&mut w).speed(0.1)).changed() {
+                                o.width_m = Length::from_system(w, sys).m();
+                            }
+                            let mut h = Length::from_m(o.height_m).in_system(sys);
+                            if ui.add(egui::DragValue::new(&mut h).speed(0.1)).changed() {
+                                o.height_m = Length::from_system(h, sys).m();
+                            }
+
+                            ui.checkbox(&mut o.shop_framed, "");
+
+                            if ui.small_button("Delete").clicked() {
+                                remove_op = Some(i);
+                            }
+                            ui.end_row();
+                        }
+                    });
+
+                if let Some(idx) = remove_op {
+                    b.openings.remove(idx);
                 }
-                ui.separator();
-                ui.label("Anchor Bolt Supply (DM81)");
-                ui.selectable_value(
-                    &mut self.project.anchor_scope,
-                    AnchorSupplyScope::ByManufacturer,
-                    "By Manufacturer",
-                );
-                ui.selectable_value(
-                    &mut self.project.anchor_scope,
-                    AnchorSupplyScope::ByOthers,
-                    "By Others",
-                );
-                ui.selectable_value(
-                    &mut self.project.anchor_scope,
-                    AnchorSupplyScope::TemplatesOnly,
-                    "Templates Only",
-                );
-                ui.separator();
-                ui.label("Shop Finish / DB_USER Rules");
+            }
+
+            MbsTab::Extensions => {
+                ui.heading("Extensions, Cranes & Attachments");
+                let b = &mut self.project.building;
+
+                ui.collapsing("Lean-To Attachments (F-0004)", |ui| {
+                    if ui.button("+ Add Lean-To").clicked() {
+                        b.lean_tos.push(LeanToSpec {
+                            id: format!("LT{}", b.lean_tos.len() + 1),
+                            wall: WallSide::LeftSidewall,
+                            span_m: 6.0,
+                            eave_height_m: 4.5,
+                            slope: 0.08,
+                            bay_start: 0,
+                            bay_count: b.bay_lengths_m.len().min(4),
+                        });
+                    }
+                    let mut remove_lt = None;
+                    for (i, lt) in b.lean_tos.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(&lt.id);
+                            num_m_field(ui, "Span", &mut lt.span_m, sys, 1.0..=30.0);
+                            num_m_field(ui, "Eave", &mut lt.eave_height_m, sys, 1.0..=20.0);
+                            if ui.button("Remove").clicked() {
+                                remove_lt = Some(i);
+                            }
+                        });
+                    }
+                    if let Some(idx) = remove_lt {
+                        b.lean_tos.remove(idx);
+                    }
+                });
+
+                ui.collapsing("Canopies & Overhangs (F-0001 / F-0112)", |ui| {
+                    if ui.button("+ Add Canopy").clicked() {
+                        b.canopies.push(CanopySpec {
+                            id: format!("CAN{}", b.canopies.len() + 1),
+                            wall: WallSide::LeftSidewall,
+                            projection_m: 2.5,
+                            height_m: b.left_eave_m,
+                            bay_start: 0,
+                            bay_count: b.bay_lengths_m.len(),
+                        });
+                    }
+                    let mut remove_can = None;
+                    for (i, can) in b.canopies.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(&can.id);
+                            num_m_field(ui, "Projection", &mut can.projection_m, sys, 0.5..=10.0);
+                            if ui.button("Remove").clicked() {
+                                remove_can = Some(i);
+                            }
+                        });
+                    }
+                    if let Some(idx) = remove_can {
+                        b.canopies.remove(idx);
+                    }
+                });
+
+                ui.collapsing("Overhead Bridge Cranes (F-0118 / F-0119)", |ui| {
+                    if ui.button("+ Add Overhead Crane").clicked() {
+                        b.cranes.push(CraneSpec {
+                            id: format!("CRN{}", b.cranes.len() + 1),
+                            capacity_metric_tons: 10.0,
+                            runway_height_m: 5.0,
+                            bracket_eccentricity_m: 0.45,
+                            wheel_base_m: 3.5,
+                            max_wheel_load_kn: 85.0,
+                            lateral_thrust_pct: 20.0,
+                        });
+                    }
+                    let mut remove_crn = None;
+                    for (i, cr) in b.cranes.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(&cr.id);
+                            ui.add(
+                                egui::DragValue::new(&mut cr.capacity_metric_tons)
+                                    .prefix("Tons: ")
+                                    .range(1.0..=100.0),
+                            );
+                            num_m_field(
+                                ui,
+                                "Runway Height",
+                                &mut cr.runway_height_m,
+                                sys,
+                                1.0..=30.0,
+                            );
+                            if ui.button("Remove").clicked() {
+                                remove_crn = Some(i);
+                            }
+                        });
+                    }
+                    if let Some(idx) = remove_crn {
+                        b.cranes.remove(idx);
+                    }
+                });
+
+                ui.collapsing("Parapet Wall System (F-0075 / F-0114)", |ui| {
+                    let mut has_parapet = b.parapet.is_some();
+                    if ui
+                        .checkbox(&mut has_parapet, "Enable Perimeter Parapets")
+                        .changed()
+                    {
+                        if has_parapet {
+                            b.parapet = Some(ParapetSpec {
+                                height_m: 1.2,
+                                sidewalls: true,
+                                endwalls: true,
+                            });
+                        } else {
+                            b.parapet = None;
+                        }
+                    }
+                    if let Some(ref mut p) = b.parapet {
+                        num_m_field(
+                            ui,
+                            "Parapet Height above Eave",
+                            &mut p.height_m,
+                            sys,
+                            0.3..=5.0,
+                        );
+                        ui.checkbox(&mut p.sidewalls, "Sidewall Parapets");
+                        ui.checkbox(&mut p.endwalls, "Endwall Parapets");
+                    }
+                });
+            }
+
+            MbsTab::Inventory => {
+                ui.heading("Company Database & Inventory");
+                ui.label("Shop Finish / DB_USER Cost Rules:");
                 for f in &self.project.database.finishes {
                     ui.selectable_value(
                         &mut self.project.finish_code,
@@ -525,419 +933,396 @@ impl App {
                         format!("{} — {}", f.code, f.description),
                     );
                 }
+
                 ui.separator();
-                ui.checkbox(
-                    &mut self.project.drawing_control.suppress_welds,
-                    "Drawing Control: Suppress weld symbols",
-                );
-            }
-            _ => {
-                ui.heading("Base Costing Rates");
-                ui.label("Integer minor units (cents). DB_USER rules apply on finish/member.");
-                let r = &mut self.project.base_rates;
-                ui.text_edit_singleline(&mut r.currency);
-                for (lbl, val) in [
-                    ("Steel / kg (cents)", &mut r.steel_minor_per_kg),
-                    ("Fabrication / kg (cents)", &mut r.fabrication_minor_per_kg),
-                    ("Finish / kg (cents)", &mut r.finish_minor_per_kg),
-                    ("Panels / m2 (cents)", &mut r.panel_minor_per_m2),
-                ] {
-                    ui.horizontal(|ui| {
-                        ui.label(lbl);
-                        ui.add(egui::DragValue::new(val).range(0..=1_000_000_000u64));
-                    });
+                ui.strong("Inventory Catalogs:");
+                ui.label(format!(
+                    "• {} Built-Up 3-Plate Frame Sections",
+                    self.project.database.built_up_sections.len()
+                ));
+                ui.label(format!(
+                    "• {} Cold-Formed Secondary Profiles",
+                    self.project.database.cold_formed_profiles.len()
+                ));
+                ui.label(format!(
+                    "• {} Structural Bolt Specs",
+                    self.project.database.bolts.len()
+                ));
+                ui.label(format!(
+                    "• {} Anchor Rod Specs",
+                    self.project.database.anchor_rods.len()
+                ));
+
+                ui.separator();
+                if ui.button("Run DBCHECK Database Integrity Audit").clicked() {
+                    let issues = dbcheck(
+                        &self.project.database,
+                        self.project.unit_system,
+                        self.project.anchor_scope,
+                    );
+                    if issues.is_empty() {
+                        self.message =
+                            "DBCHECK Audit: 0 issues found. Database is 100% valid.".into();
+                    } else {
+                        self.message = format!("DBCHECK Audit: {} issues found.", issues.len());
+                    }
                 }
-                ui.horizontal(|ui| {
-                    ui.label("Markup (bps)");
-                    ui.add(egui::DragValue::new(&mut r.markup_basis_points).range(0..=10000));
+            }
+
+            MbsTab::Costing => {
+                ui.heading("Costing & Bill of Materials");
+                let Some(r) = &self.run else {
+                    ui.label("Click Calculate to run the pricing and costing engine.");
+                    return;
+                };
+
+                egui::Grid::new("cost_grid").striped(true).show(ui, |ui| {
+                    ui.strong("Description");
+                    ui.strong("Quantity");
+                    ui.strong("Unit");
+                    ui.strong("Rate");
+                    ui.strong("Total");
+                    ui.strong("Rule Trace");
+                    ui.end_row();
+
+                    for c in &r.costs {
+                        ui.label(&c.description);
+                        ui.label(format!("{:.2}", c.quantity));
+                        ui.label(&c.unit);
+                        ui.label(format!("{:.2}", c.rate_minor as f64 / 100.0));
+                        ui.label(format!("{:.2}", c.total_minor as f64 / 100.0));
+                        ui.label(&c.rule_trace);
+                        ui.end_row();
+                    }
                 });
+
+                ui.separator();
+                ui.heading(format!(
+                    "Total Project Cost: {} {:.2} (incl. markup)",
+                    self.project.base_rates.currency,
+                    r.total_minor as f64 / 100.0
+                ));
+            }
+
+            MbsTab::DrawingSheets => {
+                ui.heading("Drawings & Interoperability CAD/BIM");
+                ui.label("Fabrication and Erection Drawings:");
+                ui.label("• Sheet E1: Foundation Anchor Bolt & Reaction Plan");
+                ui.label("• Sheet RF1: Rigid Frame Shop Assembly with Marks & Splices");
+                ui.label("• 1:1 CNC Fabrication DXF Profile (shop_RF1.dxf)");
+                ui.label("• ISO-10303-21 IFC4 STEP Structural BIM Model (model.ifc)");
+
+                ui.separator();
+                if ui
+                    .button(
+                        RichText::new("📂 Export Complete Deliverables Bundle")
+                            .size(16.0)
+                            .color(Color32::from_rgb(56, 189, 248)),
+                    )
+                    .clicked()
+                {
+                    self.export();
+                }
+            }
+
+            MbsTab::VerifyReports => {
+                ui.heading("Design Verification Reports (MBS Verify)");
+                let Some(r) = &self.run else {
+                    ui.label("Click Calculate to generate verification reports.");
+                    return;
+                };
+
+                let verify_text = format_verify_report(&self.project, r);
+                ui.horizontal(|ui| {
+                    if ui.button("Copy Verification Report").clicked() {
+                        ui.ctx().copy_text(verify_text.clone());
+                        self.message = "Copied MBS Verify report to clipboard.".into();
+                    }
+                    if ui.button("Copy PE Certification Letter").clicked() {
+                        let cert = generate_pe_certification_letter(
+                            &self.project.name,
+                            &r.revision,
+                            &self.project.building,
+                            &self.project.hazard,
+                            r.max_aisc_ratio,
+                            r.max_drift_ratio,
+                            "Structural Engineer of Record",
+                            "PE-54912-US",
+                        );
+                        ui.ctx().copy_text(cert);
+                        self.message = "Copied PE Certification Letter to clipboard.".into();
+                    }
+                });
+
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .max_height(400.0)
+                    .show(ui, |ui| {
+                        ui.monospace(&verify_text);
+                    });
             }
         }
     }
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("3D Structural & Detailing Preview");
-            ui.checkbox(&mut self.show_frames, "All frames");
-            ui.checkbox(&mut self.show_purlins, "Purlins");
-            ui.add(egui::Slider::new(&mut self.yaw, 0.1..=1.45).text("Orbit"));
-            ui.add(egui::Slider::new(&mut self.zoom, 0.4..=2.0).text("Zoom"));
+            ui.label(RichText::new("Viewport Mode:").strong());
+            ui.selectable_value(
+                &mut self.view_mode,
+                ViewportMode::Isometric3D,
+                "3D BIM Isometric",
+            );
+            ui.selectable_value(
+                &mut self.view_mode,
+                ViewportMode::Elevation2D,
+                "2D Transverse Elevation",
+            );
+            ui.selectable_value(
+                &mut self.view_mode,
+                ViewportMode::RoofPlan2D,
+                "2D Roof & Bay Plan",
+            );
+            ui.separator();
+            ui.checkbox(&mut self.show_frames, "Frames");
+            ui.checkbox(&mut self.show_purlins, "Purlins/Girts");
+            ui.add(egui::Slider::new(&mut self.zoom, 0.4..=3.0).text("Zoom"));
+            ui.add(
+                egui::Slider::new(&mut self.yaw, -std::f32::consts::PI..=std::f32::consts::PI)
+                    .text("Orbit"),
+            );
         });
-        let (response, painter) = ui.allocate_painter(
-            Vec2::new(ui.available_width(), ui.available_height().min(330.0)),
-            egui::Sense::drag(),
+
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), 460.0),
+            egui::Sense::click_and_drag(),
         );
+
         if response.dragged() {
-            self.yaw = (self.yaw + response.drag_delta().x * 0.004).clamp(0.1, 1.45);
+            self.yaw += response.drag_delta().x * 0.01;
         }
-        let rect = response.rect;
-        painter.rect_filled(rect, 8.0, Color32::from_rgb(13, 23, 36));
+
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 4.0, Color32::from_rgb(15, 23, 42));
+
         let b = &self.project.building;
-        if let Err(err) = b.validate() {
-            painter.text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                err,
-                egui::FontId::proportional(15.0),
-                Color32::LIGHT_RED,
-            );
-            return;
-        }
         let len = b.total_length_m();
-        let extent = (b.width_m + len) as f32;
-        let scale = (rect.width() / extent)
-            .min(rect.height() / (b.ridge_height_m as f32 + len as f32 * 0.4))
-            * self.zoom
-            * 0.85;
-        let project = |x: f64, y: f64, z: f64| {
-            let x = x as f32 - b.width_m as f32 / 2.0;
-            let y = y as f32 - len as f32 / 2.0;
-            Pos2::new(
-                rect.center().x + (x * self.yaw.cos() - y * self.yaw.sin()) * scale,
-                rect.center().y + (x * self.yaw.sin() + y * self.yaw.cos()) * scale * 0.30
-                    - z as f32 * scale
-                    + b.left_eave_m.max(b.right_eave_m) as f32 * scale * 0.5,
-            )
-        };
+        let center = rect.center();
 
-        let cyan = Color32::from_rgb(56, 189, 248);
-        let slate = Color32::from_rgb(71, 85, 105);
-        let pts = b.frame_points_xz();
-        let ys = b.frame_y_positions();
+        match self.view_mode {
+            ViewportMode::Isometric3D => {
+                let s = (rect.height() / (b.width_m.max(len) as f32 * 1.5)) * self.zoom;
+                let cos_y = self.yaw.cos();
+                let sin_y = self.yaw.sin();
+                let cos_p = 0.5f32;
+                let sin_p = 0.866f32;
 
-        for (i, &y) in ys.iter().enumerate() {
-            if !self.show_frames && i != 0 && i + 1 != ys.len() {
-                continue;
-            }
-            for j in 0..4 {
-                painter.line_segment(
-                    [
-                        project(pts[j][0], y, pts[j][1]),
-                        project(pts[j + 1][0], y, pts[j + 1][1]),
-                    ],
-                    Stroke::new(2.0_f32, cyan),
-                );
-            }
-            painter.text(
-                project(0.0, y, 0.0) + Vec2::new(-8.0, 12.0),
-                egui::Align2::CENTER_CENTER,
-                format!("{}", i + 1),
-                egui::FontId::proportional(11.0),
-                Color32::LIGHT_GRAY,
-            );
-        }
+                let project = |x: f64, y: f64, z: f64| -> Pos2 {
+                    let xc = (x - b.width_m / 2.0) as f32;
+                    let yc = (y - len / 2.0) as f32;
+                    let zc = z as f32;
 
-        // Eave & ridge longitudinal lines
-        for pt in &pts {
-            painter.line_segment(
-                [project(pt[0], 0.0, pt[1]), project(pt[0], len, pt[1])],
-                Stroke::new(1.0_f32, slate),
-            );
-        }
+                    let rx = xc * cos_y - yc * sin_y;
+                    let ry = xc * sin_y + yc * cos_y;
+                    let px = rx;
+                    let py = -zc * cos_p + ry * sin_p;
+                    Pos2::new(center.x + px * s, center.y + py * s)
+                };
 
-        // Purlin lines
-        if self.show_purlins {
-            let p_lines = (b.left_rafter_length_m() / b.purlin_spacing_m).ceil() as usize + 1;
-            for (p0, p1) in [(pts[1], pts[2]), (pts[3], pts[2])] {
-                for row in 1..p_lines.saturating_sub(1) {
-                    let t = row as f64 / (p_lines - 1) as f64;
-                    let x = p0[0] * (1.0 - t) + p1[0] * t;
-                    let z = p0[1] * (1.0 - t) + p1[1] * t;
-                    painter.line_segment(
-                        [project(x, 0.0, z), project(x, len, z)],
-                        Stroke::new(0.8_f32, Color32::from_rgb(51, 90, 120)),
-                    );
-                }
-            }
-        }
+                let cyan = Color32::from_rgb(56, 189, 248);
+                let slate = Color32::from_rgb(71, 85, 105);
+                let pts = b.frame_points_xz();
+                let ys = b.frame_y_positions();
 
-        // Diagonal X-bracing (highlight orange/red if clashes exist)
-        let has_clash = self
-            .run
-            .as_ref()
-            .is_some_and(|r| !r.detail.clashes.is_empty());
-        let brace_col = if has_clash {
-            Color32::from_rgb(248, 113, 113)
-        } else {
-            Color32::from_rgb(249, 115, 22)
-        };
-        for &bb in &b.braced_bays {
-            if bb < b.bay_lengths_m.len() {
-                let y0 = ys[bb];
-                let y1 = ys[bb + 1];
-                for (x, h) in [(0.0, b.left_eave_m), (b.width_m, b.right_eave_m)] {
-                    painter.line_segment(
-                        [project(x, y0, 0.0), project(x, y1, h)],
-                        Stroke::new(1.5_f32, brace_col),
-                    );
-                    painter.line_segment(
-                        [project(x, y1, 0.0), project(x, y0, h)],
-                        Stroke::new(1.5_f32, brace_col),
-                    );
-                }
-            }
-        }
-
-        // 4-wall openings
-        for o in &b.openings {
-            let corners = match o.wall {
-                WallSide::LeftSidewall => [
-                    project(0.0, o.offset_m, o.sill_m),
-                    project(0.0, o.offset_m + o.width_m, o.sill_m),
-                    project(0.0, o.offset_m + o.width_m, o.sill_m + o.height_m),
-                    project(0.0, o.offset_m, o.sill_m + o.height_m),
-                ],
-                WallSide::RightSidewall => [
-                    project(b.width_m, o.offset_m, o.sill_m),
-                    project(b.width_m, o.offset_m + o.width_m, o.sill_m),
-                    project(b.width_m, o.offset_m + o.width_m, o.sill_m + o.height_m),
-                    project(b.width_m, o.offset_m, o.sill_m + o.height_m),
-                ],
-                WallSide::FrontEndwall => [
-                    project(o.offset_m, 0.0, o.sill_m),
-                    project(o.offset_m + o.width_m, 0.0, o.sill_m),
-                    project(o.offset_m + o.width_m, 0.0, o.sill_m + o.height_m),
-                    project(o.offset_m, 0.0, o.sill_m + o.height_m),
-                ],
-                WallSide::BackEndwall => [
-                    project(o.offset_m, len, o.sill_m),
-                    project(o.offset_m + o.width_m, len, o.sill_m),
-                    project(o.offset_m + o.width_m, len, o.sill_m + o.height_m),
-                    project(o.offset_m, len, o.sill_m + o.height_m),
-                ],
-            };
-            for j in 0..4 {
-                painter.line_segment(
-                    [corners[j], corners[(j + 1) % 4]],
-                    Stroke::new(2.0_f32, Color32::GOLD),
-                );
-            }
-        }
-
-        let sys = self.project.unit_system;
-        painter.text(
-            rect.left_top() + Vec2::new(14.0, 12.0),
-            egui::Align2::LEFT_TOP,
-            format!(
-                "{:.1} x {:.1} {} | {} bays | Finish {}",
-                Length::from_m(b.width_m).in_system(sys),
-                Length::from_m(len).in_system(sys),
-                sys.length_unit(),
-                b.bays(),
-                self.project.finish_code
-            ),
-            egui::FontId::proportional(13.0),
-            Color32::LIGHT_GRAY,
-        );
-    }
-
-    fn draw_results(&mut self, ui: &mut egui::Ui) {
-        let Some(r) = &self.run else {
-            ui.add_space(12.0);
-            ui.heading("ASCE 7-22 + AISC 360-16 + Tapered PEB Workbench");
-            ui.label("Click Calculate (or Auto-Size) to solve 2nd-order tapered frames, check connections & purlins, run DBCHECK/BOMCHECK/Clash QA, and prepare IFC4 + Shop DXF exports.");
-            return;
-        };
-
-        if !r.is_current(&self.project) {
-            ui.colored_label(
-                Color32::YELLOW,
-                "STALE RESULTS — inputs modified. Click Calculate to refresh.",
-            );
-        }
-
-        ui.horizontal_wrapped(|ui| {
-            for (lbl, val, col) in [
-                (
-                    "STEEL MASS",
-                    format!("{:.0} kg", r.steel_mass_kg()),
-                    Color32::WHITE,
-                ),
-                (
-                    "ESTIMATE",
-                    format!(
-                        "{} {:.2}",
-                        self.project.base_rates.currency,
-                        r.total_minor as f64 / 100.0
-                    ),
-                    Color32::WHITE,
-                ),
-                (
-                    "AISC UNITY",
-                    format!("{:.3}", r.max_aisc_ratio),
-                    if r.max_aisc_ratio <= 1.0 {
-                        Color32::LIGHT_GREEN
-                    } else {
-                        Color32::LIGHT_RED
-                    },
-                ),
-                (
-                    "DRIFT / H200",
-                    format!("{:.3}", r.max_drift_ratio),
-                    if r.max_drift_ratio <= 1.0 {
-                        Color32::LIGHT_GREEN
-                    } else {
-                        Color32::LIGHT_RED
-                    },
-                ),
-                (
-                    "CLASHES",
-                    format!("{}", r.detail.clashes.len()),
-                    if r.detail.clashes.is_empty() {
-                        Color32::LIGHT_GREEN
-                    } else {
-                        Color32::LIGHT_RED
-                    },
-                ),
-            ] {
-                ui.group(|ui| {
-                    ui.label(RichText::new(lbl).small().color(Color32::GRAY));
-                    ui.label(RichText::new(val).size(19.0).color(col));
-                });
-            }
-        });
-
-        ui.horizontal(|ui| {
-            for (idx, lbl) in [
-                "Verify & Connections",
-                "BOM & BOMCHECK",
-                "DBCHECK & Clashes",
-                "Cost Provenance",
-            ]
-            .iter()
-            .enumerate()
-            {
-                ui.selectable_value(&mut self.output_tab, idx, *lbl);
-            }
-        });
-        ui.separator();
-
-        match self.output_tab {
-            0 => {
-                ui.label(format!(
-                    "Purlin {} (AISI S100): Moment ratio {:.3}, Deflection ratio {:.3}",
-                    r.purlin_check.profile_id,
-                    r.purlin_check.moment_ratio,
-                    r.purlin_check.deflection_ratio
-                ));
-                for ep in &r.detail.end_plates {
-                    ui.label(format!(
-                        "End-Plate [{}]: {}x {}, tp={:.0}mm | bolt util {:.3}, plate util {:.3}",
-                        ep.location,
-                        ep.bolt_count,
-                        ep.bolt_id,
-                        ep.plate_thickness_m * 1000.0,
-                        ep.bolt_utilization,
-                        ep.plate_utilization
-                    ));
-                }
-                for bp in &r.detail.base_plates {
-                    ui.label(format!(
-                        "Base Plate [{}]: {:.0}x{:.0}x{:.0}mm, {}x {} ({:?}) | anchor util {:.3}",
-                        bp.location,
-                        bp.plate_width_m * 1000.0,
-                        bp.plate_length_m * 1000.0,
-                        bp.plate_thickness_m * 1000.0,
-                        bp.anchor_count,
-                        bp.anchor_id,
-                        bp.anchor_scope,
-                        bp.anchor_utilization
-                    ));
-                }
-                ui.separator();
-                for f in r.frames.iter().filter(|f| !f.is_serviceability) {
-                    ui.collapsing(
-                        format!(
-                            "{} | {} (P-Delta iters={})",
-                            f.frame_label, f.combination, f.solution.second_order_iterations
-                        ),
-                        |ui| {
-                            for c in &f.member_checks {
-                                ui.label(format!(
-                                    "{} @xi={:.2}: N={:.1} kN, V={:.1} kN, M={:.1} kNm | Unity={:.3} [{}]",
-                                    c.member,
-                                    c.governing_xi,
-                                    c.axial_n / 1000.0,
-                                    c.shear_n / 1000.0,
-                                    c.moment_nm / 1000.0,
-                                    c.aisc.interaction_ratio,
-                                    c.aisc.governing_clause
-                                ));
-                            }
-                        },
-                    );
-                }
-            }
-            1 => {
-                egui::Grid::new("bom_grid").striped(true).show(ui, |ui| {
-                    for h in ["Mark", "Category", "Finish", "Qty", "Length m", "Total kg"] {
-                        ui.strong(h);
+                for (i, &y) in ys.iter().enumerate() {
+                    if !self.show_frames && i != 0 && i + 1 != ys.len() {
+                        continue;
                     }
-                    ui.end_row();
-                    for b in &r.bom {
-                        ui.label(&b.mark);
-                        ui.label(&b.category);
-                        ui.label(&b.finish_code);
-                        ui.label(b.count.to_string());
-                        ui.label(format!("{:.3}", b.length_each_m));
-                        ui.label(format!("{:.1}", b.total_mass_kg));
-                        ui.end_row();
+                    for j in 0..4 {
+                        painter.line_segment(
+                            [
+                                project(pts[j][0], y, pts[j][1]),
+                                project(pts[j + 1][0], y, pts[j + 1][1]),
+                            ],
+                            Stroke::new(2.0_f32, cyan),
+                        );
                     }
-                });
-                ui.separator();
-                ui.strong("BOMCHECK Location Reconciliation");
-                for bc in &r.detail.bomcheck {
-                    ui.label(format!(
-                        "[{}] {} | {} | qty={} | {:.1} kg | {}",
-                        bc.status,
-                        bc.category,
-                        bc.mark,
-                        bc.count,
-                        bc.total_mass_kg,
-                        bc.location_tag
-                    ));
+                    painter.text(
+                        project(0.0, y, 0.0) + Vec2::new(-8.0, 12.0),
+                        egui::Align2::CENTER_CENTER,
+                        format!("FL{}", i + 1),
+                        egui::FontId::proportional(11.0),
+                        Color32::LIGHT_GRAY,
+                    );
                 }
-            }
-            2 => {
-                ui.strong("3D Geometric Clash Detection");
-                if r.detail.clashes.is_empty() {
-                    ui.colored_label(Color32::LIGHT_GREEN, "0 clashes detected.");
-                } else {
-                    for cl in &r.detail.clashes {
-                        ui.colored_label(
-                            Color32::LIGHT_RED,
-                            format!(
-                                "{} [{}]: {} <-> {} — {}",
-                                cl.clash_id, cl.group_key, cl.part_a, cl.part_b, cl.description
-                            ),
+
+                for pt in &pts {
+                    painter.line_segment(
+                        [project(pt[0], 0.0, pt[1]), project(pt[0], len, pt[1])],
+                        Stroke::new(1.0_f32, slate),
+                    );
+                }
+
+                if self.show_purlins {
+                    let p_lines =
+                        (b.left_rafter_length_m() / b.purlin_spacing_m).ceil() as usize + 1;
+                    for (p0, p1) in [(pts[1], pts[2]), (pts[3], pts[2])] {
+                        for row in 1..p_lines.saturating_sub(1) {
+                            let t = row as f64 / (p_lines - 1) as f64;
+                            let x = p0[0] * (1.0 - t) + p1[0] * t;
+                            let z = p0[1] * (1.0 - t) + p1[1] * t;
+                            painter.line_segment(
+                                [project(x, 0.0, z), project(x, len, z)],
+                                Stroke::new(0.8_f32, Color32::from_rgb(51, 90, 120)),
+                            );
+                        }
+                    }
+                }
+
+                for &bb in &b.braced_bays {
+                    if bb < b.bay_lengths_m.len() {
+                        let y0 = ys[bb];
+                        let y1 = ys[bb + 1];
+                        for (x, h) in [(0.0, b.left_eave_m), (b.width_m, b.right_eave_m)] {
+                            painter.line_segment(
+                                [project(x, y0, 0.0), project(x, y1, h)],
+                                Stroke::new(1.5_f32, Color32::from_rgb(249, 115, 22)),
+                            );
+                            painter.line_segment(
+                                [project(x, y1, 0.0), project(x, y0, h)],
+                                Stroke::new(1.5_f32, Color32::from_rgb(249, 115, 22)),
+                            );
+                        }
+                    }
+                }
+
+                for o in &b.openings {
+                    let corners = match o.wall {
+                        WallSide::LeftSidewall => [
+                            project(0.0, o.offset_m, o.sill_m),
+                            project(0.0, o.offset_m + o.width_m, o.sill_m),
+                            project(0.0, o.offset_m + o.width_m, o.sill_m + o.height_m),
+                            project(0.0, o.offset_m, o.sill_m + o.height_m),
+                        ],
+                        WallSide::RightSidewall => [
+                            project(b.width_m, o.offset_m, o.sill_m),
+                            project(b.width_m, o.offset_m + o.width_m, o.sill_m),
+                            project(b.width_m, o.offset_m + o.width_m, o.sill_m + o.height_m),
+                            project(b.width_m, o.offset_m, o.sill_m + o.height_m),
+                        ],
+                        WallSide::FrontEndwall => [
+                            project(o.offset_m, 0.0, o.sill_m),
+                            project(o.offset_m + o.width_m, 0.0, o.sill_m),
+                            project(o.offset_m + o.width_m, 0.0, o.sill_m + o.height_m),
+                            project(o.offset_m, 0.0, o.sill_m + o.height_m),
+                        ],
+                        WallSide::BackEndwall => [
+                            project(o.offset_m, len, o.sill_m),
+                            project(o.offset_m + o.width_m, len, o.sill_m),
+                            project(o.offset_m + o.width_m, len, o.sill_m + o.height_m),
+                            project(o.offset_m, len, o.sill_m + o.height_m),
+                        ],
+                    };
+                    for j in 0..4 {
+                        painter.line_segment(
+                            [corners[j], corners[(j + 1) % 4]],
+                            Stroke::new(2.0_f32, Color32::GOLD),
                         );
                     }
                 }
-                ui.separator();
-                ui.strong("QA Release Findings");
-                for q in &r.qa_findings {
-                    ui.label(format!("• {q}"));
-                }
             }
-            _ => {
-                for c in &r.costs {
-                    ui.label(format!(
-                        "{}: {:.2} {} x {:.2} = {:.2} [{}]",
-                        c.description,
-                        c.quantity,
-                        c.unit,
-                        c.rate_minor as f64 / 100.0,
-                        c.total_minor as f64 / 100.0,
-                        c.rule_trace
-                    ));
+
+            ViewportMode::Elevation2D => {
+                let s = (rect.width() * 0.75 / b.width_m as f32)
+                    .min(rect.height() * 0.75 / b.ridge_height_m as f32)
+                    * self.zoom;
+                let ox = center.x - (b.width_m as f32 * s) / 2.0;
+                let oy = center.y + (b.ridge_height_m as f32 * s) / 2.0;
+
+                let to_screen = |x: f64, z: f64| -> Pos2 {
+                    Pos2::new(ox + (x as f32) * s, oy - (z as f32) * s)
+                };
+
+                let pts = b.frame_points_xz();
+                for j in 0..4 {
+                    painter.line_segment(
+                        [
+                            to_screen(pts[j][0], pts[j][1]),
+                            to_screen(pts[j + 1][0], pts[j + 1][1]),
+                        ],
+                        Stroke::new(3.0_f32, Color32::from_rgb(56, 189, 248)),
+                    );
                 }
-                ui.label(format!(
-                    "Subtotal {:.2} + Markup {:.2} = Total {} {:.2}",
-                    r.subtotal_minor as f64 / 100.0,
-                    r.markup_minor as f64 / 100.0,
-                    self.project.base_rates.currency,
-                    r.total_minor as f64 / 100.0
-                ));
+
+                painter.text(
+                    to_screen(0.0, b.left_eave_m / 2.0) + Vec2::new(-30.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{:.1}m", b.left_eave_m),
+                    egui::FontId::proportional(12.0),
+                    Color32::LIGHT_GRAY,
+                );
+                painter.text(
+                    to_screen(b.width_m, b.right_eave_m / 2.0) + Vec2::new(30.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{:.1}m", b.right_eave_m),
+                    egui::FontId::proportional(12.0),
+                    Color32::LIGHT_GRAY,
+                );
+                painter.text(
+                    to_screen(b.ridge_x_m, b.ridge_height_m) + Vec2::new(0.0, -15.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    format!("Peak: {:.2}m", b.ridge_height_m),
+                    egui::FontId::proportional(13.0),
+                    Color32::WHITE,
+                );
+                painter.text(
+                    to_screen(b.width_m / 2.0, 0.0) + Vec2::new(0.0, 20.0),
+                    egui::Align2::CENTER_TOP,
+                    format!("Span: {:.2}m", b.width_m),
+                    egui::FontId::proportional(14.0),
+                    Color32::from_rgb(56, 189, 248),
+                );
+            }
+
+            ViewportMode::RoofPlan2D => {
+                let s = (rect.width() * 0.75 / len as f32)
+                    .min(rect.height() * 0.75 / b.width_m as f32)
+                    * self.zoom;
+                let ox = center.x - (len as f32 * s) / 2.0;
+                let oy = center.y - (b.width_m as f32 * s) / 2.0;
+
+                let to_screen = |y: f64, x: f64| -> Pos2 {
+                    Pos2::new(ox + (y as f32) * s, oy + (x as f32) * s)
+                };
+
+                let ys = b.frame_y_positions();
+                for (i, &y) in ys.iter().enumerate() {
+                    painter.line_segment(
+                        [to_screen(y, 0.0), to_screen(y, b.width_m)],
+                        Stroke::new(2.0_f32, Color32::from_rgb(56, 189, 248)),
+                    );
+                    painter.text(
+                        to_screen(y, -0.5),
+                        egui::Align2::CENTER_BOTTOM,
+                        format!("FL{}", i + 1),
+                        egui::FontId::proportional(11.0),
+                        Color32::LIGHT_GRAY,
+                    );
+                }
+
+                for &bb in &b.braced_bays {
+                    if bb < b.bay_lengths_m.len() {
+                        let y0 = ys[bb];
+                        let y1 = ys[bb + 1];
+                        painter.line_segment(
+                            [to_screen(y0, 0.0), to_screen(y1, b.width_m)],
+                            Stroke::new(1.5_f32, Color32::from_rgb(249, 115, 22)),
+                        );
+                        painter.line_segment(
+                            [to_screen(y1, 0.0), to_screen(y0, b.width_m)],
+                            Stroke::new(1.5_f32, Color32::from_rgb(249, 115, 22)),
+                        );
+                    }
+                }
             }
         }
     }
@@ -949,54 +1334,46 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "OpenMBS PEB Workbench — {}{}",
+            "OpenMBS v0.2.0 — {} [{}]",
             self.project.name,
-            if self.dirty() { " *" } else { "" }
+            if self.dirty() {
+                "Unsaved Changes *"
+            } else {
+                "Saved"
+            }
         )));
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.add_space(5.0);
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("OPEN MBS")
-                        .size(22.0)
+                        .size(20.0)
                         .strong()
                         .color(Color32::from_rgb(56, 189, 248)),
                 );
-                if ui.button("New").clicked() && self.may_discard() {
+                ui.separator();
+                if ui.button("New Job").clicked() && self.may_discard() {
                     *self = Self::default();
                 }
-                if ui.button("Open").clicked() {
+                if ui.button("Open Job").clicked() {
                     self.open();
                 }
-                if ui.button("Save").clicked() {
+                if ui.button("Save Job").clicked() {
                     self.save(false);
                 }
-                if ui.button("Save As").clicked() {
+                if ui.button("Save As...").clicked() {
                     self.save(true);
                 }
-                if ui
-                    .add_enabled(!self.undo.is_empty(), egui::Button::new("Undo"))
-                    .clicked()
-                    && let Some(p) = self.undo.pop()
-                {
-                    self.redo.push(self.project.clone());
-                    self.project = p;
-                }
-                if ui
-                    .add_enabled(!self.redo.is_empty(), egui::Button::new("Redo"))
-                    .clicked()
-                    && let Some(p) = self.redo.pop()
-                {
-                    self.undo.push(self.project.clone());
-                    self.project = p;
-                }
                 ui.separator();
-                let next_unit_lbl = match self.project.unit_system {
-                    UnitSystem::ImperialUS => "Units: US (ft/psf)",
-                    UnitSystem::MetricSI => "Units: SI (m/kPa)",
+                let next_unit = match self.project.unit_system {
+                    UnitSystem::ImperialUS => "Units: US Imperial (ft/psf)",
+                    UnitSystem::MetricSI => "Units: SI Metric (m/kPa)",
                 };
-                if ui.button(next_unit_lbl).clicked() {
+                if ui
+                    .button(RichText::new(next_unit).color(Color32::GOLD))
+                    .clicked()
+                {
                     let next = match self.project.unit_system {
                         UnitSystem::ImperialUS => UnitSystem::MetricSI,
                         UnitSystem::MetricSI => UnitSystem::ImperialUS,
@@ -1004,47 +1381,85 @@ impl eframe::App for App {
                     self.project.unit_system = next;
                     self.project.drawing_control.unit_system = next;
                 }
-                if ui.button("Auto-Size").clicked() {
+                if ui
+                    .button(RichText::new("⚡ Auto-Size").color(Color32::from_rgb(56, 189, 248)))
+                    .clicked()
+                {
                     self.auto_size();
                 }
                 if ui
-                    .button(RichText::new("Calculate").color(Color32::LIGHT_GREEN))
+                    .button(
+                        RichText::new("▶ Run Design (Calculate)")
+                            .color(Color32::LIGHT_GREEN)
+                            .strong(),
+                    )
                     .clicked()
                 {
                     self.process();
                 }
-                if ui.button("Export Bundle (IFC/DXF)").clicked() {
+                if ui.button("Export Bundle (IFC4/CAD)").clicked() {
                     self.export();
                 }
             });
-            ui.add_space(5.0);
+            ui.add_space(4.0);
         });
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        egui::TopBottomPanel::top("mbs_ribbon_tabs").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.colored_label(
-                    Color32::from_rgb(245, 158, 11),
-                    "ENGINEERING APPROVAL REQUIRED BEFORE CONSTRUCTION",
-                );
+                for (tab, name) in [
+                    (MbsTab::Shape, "1. Shape"),
+                    (MbsTab::BaySpacing, "2. Bay Spacing"),
+                    (MbsTab::CodesLoads, "3. Codes & Loads"),
+                    (MbsTab::RigidFrames, "4. Rigid Frames"),
+                    (MbsTab::Openings, "5. 4-Wall Openings"),
+                    (MbsTab::Extensions, "6. Extensions & Cranes"),
+                    (MbsTab::Inventory, "7. Inventory & DB"),
+                    (MbsTab::Costing, "8. Costing"),
+                    (MbsTab::DrawingSheets, "9. CAD/BIM Drawings"),
+                    (MbsTab::VerifyReports, "10. Verify Reports"),
+                ] {
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        tab,
+                        RichText::new(name).size(13.5).strong(),
+                    );
+                }
+            });
+        });
+
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if let Some(r) = &self.run {
+                    if r.max_aisc_ratio <= 1.0 {
+                        ui.colored_label(
+                            Color32::LIGHT_GREEN,
+                            format!("✔ PASSED (AISC Unity = {:.3})", r.max_aisc_ratio),
+                        );
+                    } else {
+                        ui.colored_label(
+                            Color32::LIGHT_RED,
+                            format!("✘ OVERSTRESSED (AISC Unity = {:.3})", r.max_aisc_ratio),
+                        );
+                    }
+                } else {
+                    ui.colored_label(Color32::GRAY, "⚪ Not Yet Calculated");
+                }
                 ui.separator();
                 ui.label(&self.message);
             });
         });
 
         let before = self.project.clone();
-        egui::SidePanel::left("inputs")
+        egui::SidePanel::left("input_side_panel")
             .resizable(true)
-            .default_width(350.0)
-            .min_width(300.0)
+            .default_width(420.0)
+            .min_width(340.0)
             .show(ctx, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for (i, lbl) in ["Shape", "Loads", "Members/DB", "Costs"].iter().enumerate() {
-                        ui.selectable_value(&mut self.input_tab, i, *lbl);
-                    }
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    self.draw_tab_content(ui);
                 });
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| self.draw_inputs(ui));
             });
+
         if before != self.project {
             self.undo.push(before);
             if self.undo.len() > 100 {
@@ -1055,13 +1470,9 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Err(err) = self.project.building.validate() {
-                ui.colored_label(Color32::LIGHT_RED, err);
+                ui.colored_label(Color32::LIGHT_RED, format!("⚠ Validation Warning: {err}"));
             }
             self.draw_viewport(ui);
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .id_salt("results_scroll")
-                .show(ui, |ui| self.draw_results(ui));
         });
 
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
@@ -1073,12 +1484,12 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1480.0, 960.0])
-            .with_min_inner_size([1080.0, 720.0]),
+            .with_inner_size([1520.0, 980.0])
+            .with_min_inner_size([1100.0, 720.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "OpenMBS PEB Workbench",
+        "OpenMBS Workbench",
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());

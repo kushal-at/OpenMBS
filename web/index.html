@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenMBS — 1:1 Open Source Alternative to Metal Building Software (MBS)</title>
+  <meta name="description" content="Free, open-source Pre-Engineered Building (PEB) design, structural analysis, detailing, costing, and drafting software built in pure Rust.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='10,80 50,20 90,80 75,80 50,42 25,80' fill='%2338bdf8'/></svg>">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --green: #22c55e;
+      --orange: #f97316;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      background: rgba(11, 17, 32, 0.95);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .logo-badge {
+      background: var(--accent);
+      color: #0b1120;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-weight: 800;
+    }
+    nav { display: flex; gap: 1.5rem; align-items: center; }
+    nav a { color: var(--text-muted); font-size: 0.95rem; font-weight: 500; }
+    nav a:hover { color: #fff; text-decoration: none; }
+    .btn-github {
+      background: #334155;
+      padding: 0.45rem 1rem;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-github:hover { background: #475569; text-decoration: none; }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 4.5rem 1.5rem 3.5rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .hero-pill {
+      display: inline-block;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--accent);
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-size: 3.25rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+    .hero h1 span {
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-group {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #0b1120;
+      padding: 0.85rem 1.75rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+    }
+    .btn-primary:hover { background: #7dd3fc; text-decoration: none; transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 0.85rem 1.75rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.15s ease;
+    }
+    .btn-secondary:hover { background: #334155; text-decoration: none; }
+
+    /* Interactive 3D Canvas / Demo */
+    .viewer-card {
+      max-width: 1100px;
+      margin: 1rem auto 4rem;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .viewer-header {
+      background: #0f172a;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .viewer-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .viewer-status {
+      font-size: 0.8rem;
+      color: var(--green);
+      font-weight: 600;
+      background: rgba(34, 197, 94, 0.1);
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 480px;
+      background: #090e17;
+      cursor: grab;
+    }
+    canvas:active { cursor: grabbing; }
+    .viewer-controls {
+      background: #0f172a;
+      padding: 0.6rem 1.25rem;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Tabs Section */
+    .tabs-section {
+      max-width: 1100px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+    }
+    .section-heading {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .section-heading h2 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .section-heading p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+    .mbs-tabs {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .tab-btn {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active, .tab-btn:hover {
+      background: var(--accent);
+      color: #0b1120;
+      border-color: var(--accent);
+    }
+    .tab-content {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 2rem;
+      display: none;
+    }
+    .tab-content.active { display: block; }
+    .tab-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .tab-grid { grid-template-columns: 1fr; }
+    }
+    .tab-info h3 {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+      color: #fff;
+    }
+    .tab-info p {
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+      font-size: 1rem;
+    }
+    .tab-info ul {
+      list-style-type: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.95rem;
+    }
+    .tab-info li::before {
+      content: "✔";
+      color: var(--green);
+      margin-right: 0.5rem;
+      font-weight: bold;
+    }
+    .tab-preview {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    /* Comparison Table */
+    .compare-section {
+      max-width: 1000px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1.5rem;
+      background: var(--card-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+    }
+    th, td {
+      padding: 1rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+    th {
+      background: #0f172a;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    td { font-size: 0.95rem; }
+    tr:last-child td { border-bottom: none; }
+    .badge-open { color: var(--green); font-weight: 700; }
+    .badge-closed { color: #f87171; }
+
+    /* Downloads Section */
+    .download-section {
+      background: #0f172a;
+      border-top: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--card-border);
+      padding: 4.5rem 1.5rem;
+      text-align: center;
+    }
+    .dl-cards {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 2.5rem;
+      flex-wrap: wrap;
+    }
+    .dl-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 2rem 2.5rem;
+      width: 320px;
+      text-align: left;
+    }
+    .dl-card h4 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .dl-card p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2.5rem 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <svg width="24" height="24" viewBox="0 0 100 100">
+        <polygon points="10,80 50,20 90,80 75,80 50,42 25,80" fill="#38bdf8"/>
+      </svg>
+      OpenMBS
+      <span class="logo-badge">v0.2.0</span>
+    </div>
+    <nav>
+      <a href="#demo">3D View</a>
+      <a href="#screens">Screens</a>
+      <a href="#comparison">MBS vs OpenMBS</a>
+      <a href="#downloads">Downloads</a>
+      <a href="https://github.com/kushal-at/OpenMBS" class="btn-github" target="_blank">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-pill">⚡ Pure Rust • 100% Free & Open Source • AISC 360-16 / ASCE 7-22</div>
+      <h1>The Open-Source Alternative to <span>Metal Building Software (MBS)</span></h1>
+      <p>
+        Design, analyze, detail, cost, and draft Pre-Engineered Buildings (PEB) in minutes. From gable geometry to 2nd-order tapered frame solver, automated anchor bolt plans, 1:1 CNC fabrication DXFs, and IFC4 BIM models.
+      </p>
+      <div class="cta-group">
+        <a href="https://github.com/kushal-at/OpenMBS/releases/tag/v0.2.0" class="btn-primary">
+          <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          Download for Windows (x64)
+        </a>
+        <a href="#screens" class="btn-secondary">Explore MBS Screens</a>
+      </div>
+    </section>
+
+    <!-- Interactive 3D Canvas -->
+    <section class="viewer-card" id="demo">
+      <div class="viewer-header">
+        <div class="viewer-title">
+          <span>●</span> Interactive 3D Model: 80' x 120' Gable Warehouse with Tapered Rigid Frames
+        </div>
+        <div class="viewer-status">AISC Unity = 0.714 (PASS)</div>
+      </div>
+      <canvas id="canvas3d"></canvas>
+      <div class="viewer-controls">
+        <span>💡 Click and drag to orbit the 3D model | Scroll to zoom</span>
+        <span>Units: Dual US Customary & SI Metric</span>
+      </div>
+    </section>
+
+    <!-- MBS Tabs Walkthrough -->
+    <section class="tabs-section" id="screens">
+      <div class="section-heading">
+        <h2>Built 1:1 to Match the MBS Workflow</h2>
+        <p>Engineers familiar with Metal Building Software will feel right at home with the exact design tabs.</p>
+      </div>
+
+      <div class="mbs-tabs">
+        <button class="tab-btn active" onclick="switchTab(event, 'tab-shape')">1. Shape</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-bays')">2. Bay Spacing</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-loads')">3. Codes & Loads</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-frames')">4. Rigid Frames</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-openings')">5. 4-Wall Openings</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-drawings')">6. Drawings & BIM</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-verify')">7. Verify Report</button>
+      </div>
+
+      <!-- Tab 1: Shape -->
+      <div id="tab-shape" class="tab-content active">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>Shape (UI-0002: Geometry & Elevations)</h3>
+            <p>Define parametric building width, eave heights, roof slopes, and base elevations.</p>
+            <ul>
+              <li>Symmetrical gable, asymmetrical gable, and single-slope configurations</li>
+              <li>Peak offset / Ridge X position with automatic pitch calculation (e.g. 1:10 / 4:12)</li>
+              <li>Fixed column bases vs pinned base supports</li>
+              <li>Post & Beam vs Expandable Rigid Frame endwall framing</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[SHAPE PARAMETERS]
+Building Width:       24.00 m (78'-9")
+Left Eave Height:      6.00 m (19'-8")
+Right Eave Height:     6.00 m (19'-8")
+Ridge Peak Elevation:  7.20 m (23'-7")
+Roof Pitch:           1.20:12 (5.7 deg)
+Column Base:          Fixed Base
+Endwall Type:         Post & Beam (3 post bays)
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Bay Spacing -->
+      <div id="tab-bays" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>Bay Spacing (UI-0003 & UI-0004)</h3>
+            <p>Flexible bay spacing along the length with real-time remaining distance feedback.</p>
+            <ul>
+              <li>Unequal bay lengths (e.g. 20ft, 25ft, 25ft, 20ft) with exact tributary width tracking</li>
+              <li>Designated X-braced bays for roof and sidewall rod bracing</li>
+              <li>Roof purlin spacing o.c. and nesting lap length allowance</li>
+              <li>Sidewall & endwall girt spacings with flange brace unbraced length Lb</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[BAY SPACING GRID]
+Total Length: 36.00 m (118'-1") across 6 bays
+Bay 1: 6.00 m [BRACED]   Cumulative:  6.00 m
+Bay 2: 6.00 m            Cumulative: 12.00 m
+Bay 3: 6.00 m            Cumulative: 18.00 m
+Bay 4: 6.00 m            Cumulative: 24.00 m
+Bay 5: 6.00 m            Cumulative: 30.00 m
+Bay 6: 6.00 m [BRACED]   Cumulative: 36.00 m
+Remaining Distance: 0.000 m
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Loads -->
+      <div id="tab-loads" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>Code & Loads (UI-0006)</h3>
+            <p>Automated ASCE 7-22 environmental hazard generator and load combinations.</p>
+            <ul>
+              <li>ASCE 7-22 Directional MWFRS wind pressure distribution (Kz, qz, G, Cp, ±GCpi)</li>
+              <li>Flat and sloped roof snow loads (pf, ps) with slippery roof reduction</li>
+              <li>Roof live load reduction (R1, R2) and superimposed collateral dead loads</li>
+              <li>Full LRFD and ASD combinations with iterative 2nd-order P-Delta analysis</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[ASCE 7-22 & AISC 360-16 CRITERIA]
+Design Method:       LRFD (phi = 0.90)
+Risk Category:       II
+Basic Wind Speed:    115 mph (51.4 m/s), Exposure C
+Ground Snow (pg):    20.0 psf (0.96 kPa)
+Roof Live (Lr):      20.0 psf (0.96 kPa)
+Collateral Dead:      5.2 psf (0.25 kPa)
+Seismic ELF:         Sds = 0.200g, Sd1 = 0.100g, R = 3.5
+2nd-Order P-Delta:   ENABLED (Iterative Geometric Stiffness)
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Rigid Frames -->
+      <div id="tab-frames" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>Rigid Frames (UI-0005)</h3>
+            <p>Linearly tapered 3-plate built-up I-sections solved via 5-point Gauss quadrature.</p>
+            <ul>
+              <li>AISC 360-16 Chapter F5 slender-web bending reduction factor (Rpg)</li>
+              <li>Lateral-torsional buckling (LTB) and compression flange local buckling (FLB)</li>
+              <li>AISC Design Guide 4 Bolted Moment End-Plate connections (eave knee & ridge)</li>
+              <li>AISC Design Guide 1 column base plates with DM81 anchor bolt supply scope</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[FRAME SECTION SELECTION]
+Column:  BU-TAPER-700 (d = 350mm -> 700mm, tf = 14mm)
+Rafter:  BU-TAPER-700 (d = 700mm -> 400mm, tf = 14mm)
+Knee EP: 8x M20-A325, tp = 42mm (AISC DG-4 Extended)
+Base Pl: 4x 24mm Anchor Rods, tp = 28mm (AISC DG-1)
+Anchor Supply Scope: By Manufacturer (DM81)
+Frame Auto-Sizer: Ready (Selects minimum code-passing mass)
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 5: Openings -->
+      <div id="tab-openings" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>4-Wall Openings (UI-0007)</h3>
+            <p>Position framed doors and windows across all 4 walls with automatic girt trimming.</p>
+            <ul>
+              <li>Preset libraries: 12'x14' Truck Doors, 3'x7' Personnel Doors, Windows, Louvers</li>
+              <li>Shop-framed cold-formed jambs and headers vs field-located openings</li>
+              <li>Automatic geometric trimming of horizontal wall girts around openings</li>
+              <li>Live overlap and wall boundary validation checks</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[4-WALL OPENINGS TABLE]
+ID     Wall            Offset    Width    Height   Framing
+OHD1   Left Sidewall    6.00 m   3.66 m   4.27 m   Shop-Framed
+MAN1   Left Sidewall    2.00 m   0.91 m   2.13 m   Shop-Framed
+WIN1   Front Endwall    3.00 m   1.22 m   0.91 m   Field-Located
+* Wall girt trimming executed: 4 segments generated.
+* 3D Clash Detection check: PASSED (0 interferences).
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 6: Drawings -->
+      <div id="tab-drawings" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>Drawings & BIM Interoperability</h3>
+            <p>Direct export of fabrication-ready drawings, CNC profiles, and BIM models.</p>
+            <ul>
+              <li><strong>Sheet E1</strong>: Foundation Anchor Bolt & Reaction Plan (SVG)</li>
+              <li><strong>Sheet RF1</strong>: Rigid Frame Shop Assembly with Part Callouts (SVG)</li>
+              <li><strong>Shop DXF</strong>: 1:1 full-scale CNC plate profile and bolt hole patterns</li>
+              <li><strong>IFC4 BIM</strong>: ISO-10303-21 STEP structural model for Revit & Tekla</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+[DELIVERABLES BUNDLE EXPORT]
+✔ manifest.json           (SHA-256 integrity hashes)
+✔ sheet_E1_anchor_plan.svg (Foundation reaction drawing)
+✔ shop_RF1.svg            (Rigid frame shop assembly)
+✔ shop_RF1.dxf            (1:1 CNC fabrication DXF)
+✔ model.ifc               (ISO-10303-21 IFC4 STEP BIM)
+✔ verify_report.txt       (Plain-text MBS Verify report)
+✔ bomcheck.csv            (Location & mark reconciliation)
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 7: Verify -->
+      <div id="tab-verify" class="tab-content">
+        <div class="tab-grid">
+          <div class="tab-info">
+            <h3>MBS Verify & Certification Report</h3>
+            <p>Detailed plain-text verification report showing code clauses and safety factors.</p>
+            <ul>
+              <li>Governing load combinations with P-Delta convergence residuals (&lt; 10⁻¹²)</li>
+              <li>AISC 360-16 member interaction equations H1-1a and H1-1b at all stations</li>
+              <li>Cold-formed purlin moment and deflection ratios per AISI S100-16</li>
+              <li>Automated PE Stamped Design Certification Letter generation</li>
+            </ul>
+          </div>
+          <div class="tab-preview">
+OPENMBS DESIGN VERIFICATION REPORT (AISC 360-16 / ASCE 7-22)
+Method: LRFD | P-Delta: true | Max AISC Unity: 0.714
+========================================================================
+[Interior Frame #6] LC3: 1.2D + 1.6S (trib = 6.00 m, P-Delta iters = 6)
+  Left Column   @xi=1.00: P= 123.0 kN, V=-111.7 kN, M=-399.1 kNm | Unity=0.714 [AISC F2/F4 + H1-1b]
+  Left Rafter   @xi=0.00: P= 123.6 kN, V= 111.9 kN, M=-399.2 kNm | Unity=0.714 [AISC F2/F4 + H1-1b]
+
+Purlin 200Z25 Check (AISI S100-16): M_ratio=0.591, Defl_ratio=0.634
+Connection [Eave Knee Splice]: 8x M20-A325, tp=42mm, plate_util=1.000
+Status: SATISFIES ALL APPLICABLE BUILDING SPECIFICATIONS
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison Table -->
+    <section class="compare-section" id="comparison">
+      <div class="section-heading">
+        <h2>OpenMBS vs Legacy MBS</h2>
+        <p>Why modern engineering offices and fabricators are adopting OpenMBS.</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Legacy MBS Software</th>
+            <th>OpenMBS (Open Source)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Cost & Licensing</strong></td>
+            <td class="badge-closed">$10,000+ / seat + Annual Maintenance</td>
+            <td class="badge-open">100% Free & Open Source (MIT)</td>
+          </tr>
+          <tr>
+            <td><strong>Engine & Performance</strong></td>
+            <td>1990s legacy desktop codebase</td>
+            <td class="badge-open">Pure Rust, Multi-Core, 2nd-Order Tapered Solver</td>
+          </tr>
+          <tr>
+            <td><strong>Unit System</strong></td>
+            <td>Requires separate metric module activation</td>
+            <td class="badge-open">Instant 1-Click Toggle: US Imperial & SI Metric</td>
+          </tr>
+          <tr>
+            <td><strong>BIM & CAD Export</strong></td>
+            <td>Proprietary exchange formats</td>
+            <td class="badge-open">Standard ISO-10303-21 IFC4 STEP & 1:1 DXF</td>
+          </tr>
+          <tr>
+            <td><strong>Audit Tools</strong></td>
+            <td>DBCHECK & BOMCHECK built-in</td>
+            <td class="badge-open">DBCHECK, BOMCHECK & 3D Geometric Clash Detection</td>
+          </tr>
+          <tr>
+            <td><strong>Platform Support</strong></td>
+            <td>Windows x86 legacy only</td>
+            <td class="badge-open">Windows x64, Windows ARM64, Linux, & Web</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Downloads Section -->
+    <section class="download-section" id="downloads">
+      <div class="section-heading">
+        <h2>Download OpenMBS v0.2.0</h2>
+        <p>Get started today with pre-built binaries or build from source with Cargo.</p>
+      </div>
+
+      <div class="dl-cards">
+        <div class="dl-card">
+          <h4>Windows (x64)</h4>
+          <p>For Intel and AMD 64-bit Windows machines (Windows 10/11).</p>
+          <a href="https://github.com/kushal-at/OpenMBS/releases/download/v0.2.0/openmbs-v0.2.0-windows-x64.zip" class="btn-primary">
+            Download .ZIP (7 MB)
+          </a>
+        </div>
+        <div class="dl-card">
+          <h4>Windows (ARM64)</h4>
+          <p>For ARM64 Windows PCs, Surface Pro, and Snapdragon devices.</p>
+          <a href="https://github.com/kushal-at/OpenMBS/releases/tag/v0.2.0" class="btn-secondary">
+            Release Assets
+          </a>
+        </div>
+        <div class="dl-card">
+          <h4>Build with Cargo</h4>
+          <p>One command from source on any operating system.</p>
+          <code style="background:#090e17; padding:0.4rem 0.6rem; border-radius:4px; font-size:0.8rem; display:block; margin-bottom:1rem;">
+            cargo run -p openmbs-desktop
+          </code>
+          <a href="https://github.com/kushal-at/OpenMBS" class="btn-secondary" target="_blank">View Repository</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>OpenMBS is an independent open-source project licensed under the MIT License.</p>
+    <p>Not affiliated with, sponsored by, or endorsed by Metal Building Software, Inc. (MBS).</p>
+  </footer>
+
+  <script>
+    // Tab switching
+    function switchTab(evt, tabId) {
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      evt.currentTarget.classList.add('active');
+    }
+
+    // 3D Canvas Wireframe Renderer (Isometric Orbit)
+    const canvas = document.getElementById('canvas3d');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let yaw = 0.65;
+    let pitch = 0.52;
+    let zoom = 1.0;
+    let isDragging = false;
+    let lastMouseX = 0;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * window.devicePixelRatio;
+      canvas.height = rect.height * window.devicePixelRatio;
+      width = canvas.width;
+      height = canvas.height;
+      draw3d();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    canvas.addEventListener('mousedown', e => {
+      isDragging = true;
+      lastMouseX = e.clientX;
+    });
+    window.addEventListener('mouseup', () => isDragging = false);
+    canvas.addEventListener('mousemove', e => {
+      if (isDragging) {
+        yaw += (e.clientX - lastMouseX) * 0.008;
+        lastMouseX = e.clientX;
+        draw3d();
+      }
+    });
+
+    const b_width = 24.0;
+    const b_len = 36.0;
+    const b_eave = 6.0;
+    const b_ridge = 7.2;
+    const bays = 6;
+    const bay_len = 6.0;
+
+    function project(x, y, z) {
+      const xc = x - b_width / 2;
+      const yc = y - b_len / 2;
+      const zc = z;
+
+      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+      const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+
+      const rx = xc * cosY - yc * sinY;
+      const ry = xc * sinY + yc * cosY;
+
+      const s = (height / 60) * zoom;
+      const px = width / 2 + rx * s;
+      const py = height / 2 - (zc * cosP - ry * sinP) * s;
+      return [px, py];
+    }
+
+    function draw3d() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Frame nodes
+      const framePts = [
+        [0, 0],
+        [0, b_eave],
+        [b_width / 2, b_ridge],
+        [b_width, b_eave],
+        [b_width, 0]
+      ];
+
+      // Draw rigid frames (FL1 - FL7)
+      ctx.lineWidth = 2.5 * window.devicePixelRatio;
+      ctx.strokeStyle = '#38bdf8';
+      for (let i = 0; i <= bays; i++) {
+        const y = i * bay_len;
+        ctx.beginPath();
+        for (let j = 0; j < framePts.length; j++) {
+          const p = project(framePts[j][0], y, framePts[j][1]);
+          if (j === 0) ctx.moveTo(p[0], p[1]);
+          else ctx.lineTo(p[0], p[1]);
+        }
+        ctx.stroke();
+      }
+
+      // Longitudinal lines (eaves & ridge)
+      ctx.lineWidth = 1.2 * window.devicePixelRatio;
+      ctx.strokeStyle = '#475569';
+      for (const pt of framePts) {
+        const p0 = project(pt[0], 0, pt[1]);
+        const p1 = project(pt[0], b_len, pt[1]);
+        ctx.beginPath();
+        ctx.moveTo(p0[0], p0[1]);
+        ctx.lineTo(p1[0], p1[1]);
+        ctx.stroke();
+      }
+
+      // X-Bracing in End Bays (Bay 1 & Bay 6)
+      ctx.lineWidth = 2.0 * window.devicePixelRatio;
+      ctx.strokeStyle = '#f97316';
+      for (const bayIdx of [0, bays - 1]) {
+        const y0 = bayIdx * bay_len;
+        const y1 = (bayIdx + 1) * bay_len;
+        for (const x of [0, b_width]) {
+          const a0 = project(x, y0, 0);
+          const a1 = project(x, y1, b_eave);
+          const b0 = project(x, y1, 0);
+          const b1 = project(x, y0, b_eave);
+          ctx.beginPath();
+          ctx.moveTo(a0[0], a0[1]); ctx.lineTo(a1[0], a1[1]);
+          ctx.moveTo(b0[0], b0[1]); ctx.lineTo(b1[0], b1[1]);
+          ctx.stroke();
+        }
+      }
+
+      // Overhead Door on Left Wall
+      ctx.lineWidth = 2.5 * window.devicePixelRatio;
+      ctx.strokeStyle = '#fbbf24';
+      const door = [
+        project(0, 6, 0),
+        project(0, 9.66, 0),
+        project(0, 9.66, 4.27),
+        project(0, 6, 4.27)
+      ];
+      ctx.beginPath();
+      ctx.moveTo(door[0][0], door[0][1]);
+      ctx.lineTo(door[1][0], door[1][1]);
+      ctx.lineTo(door[2][0], door[2][1]);
+      ctx.lineTo(door[3][0], door[3][1]);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    setTimeout(resizeCanvas, 50);
+  </script>
+</body>
+</html>

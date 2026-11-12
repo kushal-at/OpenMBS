@@ -1045,7 +1045,11 @@ pub fn build_detail_model(
                     WallSide::LeftSidewall => (0.0, -lt.span_m),
                     _ => (b.width_m, b.width_m + lt.span_m),
                 };
-                let z_attach = if lt.wall == WallSide::LeftSidewall { b.left_eave_m } else { b.right_eave_m };
+                let z_attach = if lt.wall == WallSide::LeftSidewall {
+                    b.left_eave_m
+                } else {
+                    b.right_eave_m
+                };
                 let z_post = lt.eave_height_m;
                 parts.push(PartOccurrence {
                     occurrence_id: format!("LT-{}-COL-{}", lt.id, bay_idx + 1),
@@ -1160,7 +1164,11 @@ pub fn build_detail_model(
     // Crane runway beams and brackets (F-0118, F-0119)
     for cr in &b.cranes {
         for (tag, x_col) in [("L", 0.0), ("R", b.width_m)] {
-            let x_brk = if tag == "L" { cr.bracket_eccentricity_m } else { b.width_m - cr.bracket_eccentricity_m };
+            let x_brk = if tag == "L" {
+                cr.bracket_eccentricity_m
+            } else {
+                b.width_m - cr.bracket_eccentricity_m
+            };
             for (fi, &y) in frame_ys.iter().enumerate() {
                 parts.push(PartOccurrence {
                     occurrence_id: format!("CRN-{tag}-BRK-{}", fi + 1),
@@ -1178,7 +1186,11 @@ pub fn build_detail_model(
                     width_m: 0.20,
                     length_m: cr.bracket_eccentricity_m,
                     mass_kg: 45.0,
-                    bbox: Aabb3::from_points([x_col, y, cr.runway_height_m], [x_brk, y, cr.runway_height_m], 0.12),
+                    bbox: Aabb3::from_points(
+                        [x_col, y, cr.runway_height_m],
+                        [x_brk, y, cr.runway_height_m],
+                        0.12,
+                    ),
                     holes: vec![],
                     weld_note: None,
                 });
@@ -1202,7 +1214,11 @@ pub fn build_detail_model(
                     width_m: 0.20,
                     length_m: bay_len,
                     mass_kg: bay_len * 65.0,
-                    bbox: Aabb3::from_points([x_brk, y0, cr.runway_height_m], [x_brk, y1, cr.runway_height_m], 0.15),
+                    bbox: Aabb3::from_points(
+                        [x_brk, y0, cr.runway_height_m],
+                        [x_brk, y1, cr.runway_height_m],
+                        0.15,
+                    ),
                     holes: vec![],
                     weld_note: None,
                 });
@@ -1215,7 +1231,11 @@ pub fn build_detail_model(
         if pf.bay_index < b.bay_lengths_m.len() {
             let y0 = frame_ys[pf.bay_index];
             let y1 = frame_ys[pf.bay_index + 1];
-            let x = if pf.wall == WallSide::LeftSidewall { 0.0 } else { b.width_m };
+            let x = if pf.wall == WallSide::LeftSidewall {
+                0.0
+            } else {
+                b.width_m
+            };
             let zh = pf.clear_height_m;
             parts.push(PartOccurrence {
                 occurrence_id: format!("PORTAL-BM-B{}", pf.bay_index + 1),
