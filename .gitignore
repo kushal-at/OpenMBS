@@ -1,0 +1,9 @@
+/target/
+/.tools/
+/.research_work/
+/*.zip
+/output/
+/*.openmbs.json
+/*.peb.json
+/dist/
+*.tmp

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "Welded I 400x180x6x10",
+    "source": "Illustrative catalog; not certified stock",
+    "depth_m": 0.4,
+    "flange_width_m": 0.18,
+    "web_m": 0.006,
+    "flange_m": 0.01,
+    "e_pa": 200000000000.0,
+    "fy_pa": 250000000.0,
+    "density_kg_m3": 7850.0
+  },
+  {
+    "id": "Welded I 600x220x8x12",
+    "source": "Illustrative catalog; not certified stock",
+    "depth_m": 0.6,
+    "flange_width_m": 0.22,
+    "web_m": 0.008,
+    "flange_m": 0.012,
+    "e_pa": 200000000000.0,
+    "fy_pa": 250000000.0,
+    "density_kg_m3": 7850.0
+  },
+  {
+    "id": "Welded I 800x300x10x16",
+    "source": "Illustrative catalog; not certified stock",
+    "depth_m": 0.8,
+    "flange_width_m": 0.3,
+    "web_m": 0.01,
+    "flange_m": 0.016,
+    "e_pa": 200000000000.0,
+    "fy_pa": 250000000.0,
+    "density_kg_m3": 7850.0
+  },
+  {
+    "id": "Welded I 1000x350x12x20",
+    "source": "Illustrative catalog; not certified stock",
+    "depth_m": 1.0,
+    "flange_width_m": 0.35,
+    "web_m": 0.012,
+    "flange_m": 0.02,
+    "e_pa": 200000000000.0,
+    "fy_pa": 250000000.0,
+    "density_kg_m3": 7850.0
+  }
+]

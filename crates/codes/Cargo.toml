@@ -1,0 +1,11 @@
+[package]
+name = "openmbs-codes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openmbs-geometry = { path = "../geometry" }
+openmbs-inventory = { path = "../inventory" }
+serde.workspace = true
+

@@ -1,0 +1,88 @@
+{
+  "format": "openmbs-project-v1",
+  "revisions": [
+    {
+      "hash": "ad2b6da406a8223b29bdcee0c621f374e2476afc5603f269da75b9e4501cc577",
+      "engine": "openmbs-0.1.0",
+      "note": "Initial example",
+      "project": {
+        "schema_version": 1,
+        "name": "Demonstration warehouse",
+        "customer": "Example customer",
+        "site": "User-defined site",
+        "input_source": "Illustrative inputs; replace with reviewed project data",
+        "building": {
+          "width_m": 24.0,
+          "length_m": 36.0,
+          "eave_m": 6.0,
+          "roof_rise_per_run": 0.1,
+          "bays": 6,
+          "fixed_bases": true,
+          "purlin_spacing_m": 1.5,
+          "girt_spacing_m": 1.5,
+          "secondary_kg_per_m": 6.0,
+          "panel_kg_per_m2": 5.0,
+          "openings": []
+        },
+        "section": {
+          "id": "Welded I 600x220x8x12",
+          "source": "Illustrative prismatic section; no mill certification",
+          "depth_m": 0.6,
+          "flange_width_m": 0.22,
+          "web_m": 0.008,
+          "flange_m": 0.012,
+          "e_pa": 200000000000.0,
+          "fy_pa": 250000000.0,
+          "density_kg_m3": 7850.0
+        },
+        "loads": [
+          {
+            "id": "D",
+            "source": "Illustrative total dead load including self weight",
+            "roof_down_kpa": 0.4,
+            "wall_right_kpa": 0.0
+          },
+          {
+            "id": "Lr",
+            "source": "Illustrative roof live load",
+            "roof_down_kpa": 0.6,
+            "wall_right_kpa": 0.0
+          },
+          {
+            "id": "W",
+            "source": "Illustrative net wind pressures, not code-derived",
+            "roof_down_kpa": -0.7,
+            "wall_right_kpa": 0.5
+          }
+        ],
+        "combinations": [
+          {
+            "id": "Gravity example",
+            "factors": [
+              1.0,
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "id": "Uplift example",
+            "factors": [
+              1.0,
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "rates": {
+          "currency": "USD",
+          "source": "Illustrative rates in cents, not a supplier quotation",
+          "steel_minor_per_kg": 150,
+          "panel_minor_per_m2": 1200,
+          "fabrication_minor_per_kg": 75,
+          "finish_minor_per_kg": 25,
+          "markup_basis_points": 1500
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "crates/units",
+    "crates/solver",
+    "crates/inventory",
+    "crates/geometry",
+    "crates/codes",
+    "crates/detailing",
+    "crates/drawings",
+    "crates/core",
+    "crates/cli",
+    "crates/desktop",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/kushal-at/OpenMBS"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+openmbs-units = { path = "crates/units" }
+openmbs-solver = { path = "crates/solver" }
+openmbs-inventory = { path = "crates/inventory" }
+openmbs-geometry = { path = "crates/geometry" }
+openmbs-codes = { path = "crates/codes" }
+openmbs-detailing = { path = "crates/detailing" }
+openmbs-drawings = { path = "crates/drawings" }
+openmbs-core = { path = "crates/core" }

@@ -1,0 +1,18 @@
+[package]
+name = "openmbs-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openmbs-codes.workspace = true
+openmbs-detailing.workspace = true
+openmbs-drawings.workspace = true
+openmbs-geometry.workspace = true
+openmbs-inventory.workspace = true
+openmbs-solver.workspace = true
+openmbs-units.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+tempfile = "3"

@@ -1,0 +1,15 @@
+[package]
+name = "openmbs-drawings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openmbs-detailing = { path = "../detailing" }
+openmbs-geometry = { path = "../geometry" }
+openmbs-units = { path = "../units" }
+serde.workspace = true
+
+[dev-dependencies]
+openmbs-codes = { path = "../codes" }
+openmbs-inventory = { path = "../inventory" }

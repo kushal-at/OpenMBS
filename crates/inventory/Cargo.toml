@@ -1,0 +1,10 @@
+[package]
+name = "openmbs-inventory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openmbs-units = { path = "../units" }
+serde.workspace = true
+
