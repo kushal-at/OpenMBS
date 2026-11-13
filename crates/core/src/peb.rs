@@ -9,8 +9,8 @@ use openmbs_codes::{
 };
 use openmbs_detailing::{DetailModel, PartCategory, build_detail_model};
 use openmbs_drawings::{
-    DrawingControl, anchor_plan_svg, erection_plan_svg, export_ifc4, piece_fabrication_dxf,
-    shop_assembly_svg, shop_sheet_marks,
+    DrawingControl, anchor_plan_dxf, anchor_plan_svg, erection_plan_dxf, erection_plan_svg,
+    export_ifc4, piece_fabrication_dxf, shop_assembly_svg, shop_sheet_marks,
 };
 use openmbs_geometry::{BuildingSpec, EndwallType, WallOpening, WallSide};
 use openmbs_inventory::{
@@ -1243,7 +1243,24 @@ pub fn export_peb_bundle(p: &EngineeringProject, r: &EngineeringRun, path: &Path
         max_uplift_kn,
         max_shear_kn,
     );
+    let e1_dxf = anchor_plan_dxf(
+        &p.name,
+        &r.revision,
+        &p.building,
+        &r.detail,
+        &p.drawing_control,
+        max_comp_kn,
+        max_uplift_kn,
+        max_shear_kn,
+    );
     let er1_svg = erection_plan_svg(
+        &p.name,
+        &r.revision,
+        &p.building,
+        &r.detail,
+        &p.drawing_control,
+    );
+    let er1_dxf = erection_plan_dxf(
         &p.name,
         &r.revision,
         &p.building,
@@ -1279,7 +1296,9 @@ pub fn export_peb_bundle(p: &EngineeringProject, r: &EngineeringRun, path: &Path
         ("verify_report.txt".into(), verify_txt.into_bytes()),
         ("certification_letter.txt".into(), cert_letter.into_bytes()),
         ("sheet_E1_anchor_plan.svg".into(), e1_svg.into_bytes()),
+        ("sheet_E1_anchor_plan.dxf".into(), e1_dxf.into_bytes()),
         ("sheet_ER1_erection_plan.svg".into(), er1_svg.into_bytes()),
+        ("sheet_ER1_erection_plan.dxf".into(), er1_dxf.into_bytes()),
         ("model.ifc".into(), ifc.into_bytes()),
     ];
 

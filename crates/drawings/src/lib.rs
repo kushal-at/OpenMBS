@@ -421,6 +421,282 @@ pub fn erection_plan_svg(
     s
 }
 
+/// Sheet E1: Foundation Anchor Bolt & Base Plate Layout Plan (AutoCAD DXF).
+#[allow(clippy::too_many_arguments)]
+pub fn anchor_plan_dxf(
+    project_name: &str,
+    revision: &str,
+    b: &BuildingSpec,
+    detail: &DetailModel,
+    ctrl: &DrawingControl,
+    max_comp_kn: f64,
+    max_uplift_kn: f64,
+    max_shear_kn: f64,
+) -> String {
+    let mut d = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n".to_string();
+    let l_mm = b.total_length_m() * 1000.0;
+    let w_mm = b.width_m * 1000.0;
+    let ys = b.frame_y_positions();
+
+    let line = |d: &mut String, x1: f64, y1: f64, x2: f64, y2: f64, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nLINE\n8\n{layer}\n10\n{x1:.3}\n20\n{y1:.3}\n30\n0\n11\n{x2:.3}\n21\n{y2:.3}\n31\n0"
+        );
+    };
+    let circle = |d: &mut String, cx: f64, cy: f64, r: f64, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nCIRCLE\n8\n{layer}\n10\n{cx:.3}\n20\n{cy:.3}\n30\n0\n40\n{r:.3}"
+        );
+    };
+    let text = |d: &mut String, x: f64, y: f64, h: f64, val: &str, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nTEXT\n8\n{layer}\n10\n{x:.3}\n20\n{y:.3}\n30\n0\n40\n{h:.3}\n1\n{val}"
+        );
+    };
+
+    // Building Steel Perimeter
+    line(&mut d, 0.0, 0.0, l_mm, 0.0, "PERIMETER");
+    line(&mut d, l_mm, 0.0, l_mm, w_mm, "PERIMETER");
+    line(&mut d, l_mm, w_mm, 0.0, w_mm, "PERIMETER");
+    line(&mut d, 0.0, w_mm, 0.0, 0.0, "PERIMETER");
+
+    // Grid lines FL-1 to FL-N
+    for (idx, &y) in ys.iter().enumerate() {
+        let gx = y * 1000.0;
+        line(&mut d, gx, -600.0, gx, w_mm + 600.0, "GRID_LINES");
+        circle(&mut d, gx, w_mm + 1400.0, 450.0, "GRID_BUBBLES");
+        let label = format!("{}", idx + 1);
+        text(&mut d, gx - 120.0, w_mm + 1280.0, 320.0, &label, "GRID_TEXT");
+    }
+
+    // Base plates & Anchors
+    let bp_w = detail
+        .base_plates
+        .first()
+        .map(|bp| bp.plate_width_m * 1000.0)
+        .unwrap_or(400.0);
+    let bp_l = detail
+        .base_plates
+        .first()
+        .map(|bp| bp.plate_length_m * 1000.0)
+        .unwrap_or(400.0);
+    for &y in &ys {
+        let gx = y * 1000.0;
+        for &gy in &[0.0, w_mm] {
+            line(
+                &mut d,
+                gx - bp_l * 0.5,
+                gy - bp_w * 0.5,
+                gx + bp_l * 0.5,
+                gy - bp_w * 0.5,
+                "BASEPLATES",
+            );
+            line(
+                &mut d,
+                gx + bp_l * 0.5,
+                gy - bp_w * 0.5,
+                gx + bp_l * 0.5,
+                gy + bp_w * 0.5,
+                "BASEPLATES",
+            );
+            line(
+                &mut d,
+                gx + bp_l * 0.5,
+                gy + bp_w * 0.5,
+                gx - bp_l * 0.5,
+                gy + bp_w * 0.5,
+                "BASEPLATES",
+            );
+            line(
+                &mut d,
+                gx - bp_l * 0.5,
+                gy + bp_w * 0.5,
+                gx - bp_l * 0.5,
+                gy - bp_w * 0.5,
+                "BASEPLATES",
+            );
+
+            // 4 Anchor bolts
+            let off_x = bp_l * 0.3;
+            let off_y = bp_w * 0.3;
+            for sx in &[-1.0, 1.0] {
+                for sy in &[-1.0, 1.0] {
+                    circle(&mut d, gx + sx * off_x, gy + sy * off_y, 16.0, "ANCHOR_RODS");
+                }
+            }
+            text(&mut d, gx + bp_l * 0.6, gy - 100.0, 180.0, "BP1", "TEXT");
+        }
+    }
+
+    // Sidewall X-Bracing
+    for &bb in &b.braced_bays {
+        if bb < b.bay_lengths_m.len() {
+            let x0 = ys[bb] * 1000.0;
+            let x1 = ys[bb + 1] * 1000.0;
+            for &gy in &[0.0, w_mm] {
+                line(&mut d, x0, gy - 250.0, x1, gy + 250.0, "X_BRACING");
+                line(&mut d, x0, gy + 250.0, x1, gy - 250.0, "X_BRACING");
+            }
+        }
+    }
+
+    // Title Block and Reaction Schedule
+    text(
+        &mut d,
+        0.0,
+        -1800.0,
+        450.0,
+        &format!("{} - SHEET E1: FOUNDATION ANCHOR BOLT PLAN", ctrl.title_company),
+        "TITLE_BLOCK",
+    );
+    text(
+        &mut d,
+        0.0,
+        -2500.0,
+        280.0,
+        &format!(
+            "Project: {} | Rev: {} | Out-to-Out: {:.1}m x {:.1}m",
+            project_name, revision, b.width_m, b.total_length_m()
+        ),
+        "TITLE_BLOCK",
+    );
+    text(
+        &mut d,
+        0.0,
+        -3100.0,
+        240.0,
+        &format!(
+            "Factored Envelope Reactions: Max Comp = {:.1} kN | Max Uplift = {:.1} kN | Max Shear = {:.1} kN",
+            max_comp_kn, max_uplift_kn, max_shear_kn
+        ),
+        "SCHEDULE",
+    );
+
+    d.push_str("0\nENDSEC\n0\nEOF\n");
+    d
+}
+
+/// Sheet ER1: Roof & Wall Erection Framing Plan (AutoCAD DXF).
+pub fn erection_plan_dxf(
+    project_name: &str,
+    revision: &str,
+    b: &BuildingSpec,
+    detail: &DetailModel,
+    ctrl: &DrawingControl,
+) -> String {
+    let mut d = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n".to_string();
+    let l_mm = b.total_length_m() * 1000.0;
+    let w_mm = b.width_m * 1000.0;
+    let ys = b.frame_y_positions();
+
+    let line = |d: &mut String, x1: f64, y1: f64, x2: f64, y2: f64, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nLINE\n8\n{layer}\n10\n{x1:.3}\n20\n{y1:.3}\n30\n0\n11\n{x2:.3}\n21\n{y2:.3}\n31\n0"
+        );
+    };
+    let circle = |d: &mut String, cx: f64, cy: f64, r: f64, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nCIRCLE\n8\n{layer}\n10\n{cx:.3}\n20\n{cy:.3}\n30\n0\n40\n{r:.3}"
+        );
+    };
+    let text = |d: &mut String, x: f64, y: f64, h: f64, val: &str, layer: &str| {
+        let _ = writeln!(
+            d,
+            "0\nTEXT\n8\n{layer}\n10\n{x:.3}\n20\n{y:.3}\n30\n0\n40\n{h:.3}\n1\n{val}"
+        );
+    };
+
+    // Framing Perimeter
+    line(&mut d, 0.0, 0.0, l_mm, 0.0, "PERIMETER");
+    line(&mut d, l_mm, 0.0, l_mm, w_mm, "PERIMETER");
+    line(&mut d, l_mm, w_mm, 0.0, w_mm, "PERIMETER");
+    line(&mut d, 0.0, w_mm, 0.0, 0.0, "PERIMETER");
+
+    // Frame lines FL-1 to FL-N
+    for (idx, &y) in ys.iter().enumerate() {
+        let gx = y * 1000.0;
+        line(&mut d, gx, 0.0, gx, w_mm, "RIGID_FRAMES");
+        circle(&mut d, gx, w_mm + 1400.0, 450.0, "GRID_BUBBLES");
+        let label = format!("FL-{}", idx + 1);
+        text(&mut d, gx - 200.0, w_mm + 1280.0, 300.0, &label, "GRID_TEXT");
+    }
+
+    // Purlin runs along building length
+    let num_purlins = (b.width_m / b.purlin_spacing_m.max(0.5)).floor() as usize;
+    for p_idx in 1..num_purlins {
+        let py = (p_idx as f64) * b.purlin_spacing_m * 1000.0;
+        if py < w_mm {
+            line(&mut d, 0.0, py, l_mm, py, "PURLIN_RUNS");
+            let p_lbl = format!("PURLIN-{}", p_idx);
+            text(&mut d, 300.0, py + 50.0, 160.0, &p_lbl, "PURLIN_TEXT");
+        }
+    }
+
+    // Roof X-Braces in Braced Bays
+    for &bb in &b.braced_bays {
+        if bb < b.bay_lengths_m.len() {
+            let x0 = ys[bb] * 1000.0;
+            let x1 = ys[bb + 1] * 1000.0;
+            line(&mut d, x0, 0.0, x1, w_mm, "ROOF_X_BRACE");
+            line(&mut d, x0, w_mm, x1, 0.0, "ROOF_X_BRACE");
+            let bay_lbl = format!("ROOF X-BRACE (Bay {})", bb + 1);
+            text(&mut d, 0.5 * (x0 + x1) - 600.0, 0.5 * w_mm, 250.0, &bay_lbl, "ROOF_X_BRACE");
+        }
+    }
+
+    // Title Block and Schedule
+    let purlins = detail
+        .parts
+        .iter()
+        .filter(|p| p.category == PartCategory::Purlin)
+        .count();
+    let girts = detail
+        .parts
+        .iter()
+        .filter(|p| {
+            p.category == PartCategory::SidewallGirt || p.category == PartCategory::EndwallGirt
+        })
+        .count();
+    text(
+        &mut d,
+        0.0,
+        -1800.0,
+        450.0,
+        &format!("{} - SHEET ER1: ROOF & WALL ERECTION FRAMING PLAN", ctrl.title_company),
+        "TITLE_BLOCK",
+    );
+    text(
+        &mut d,
+        0.0,
+        -2500.0,
+        280.0,
+        &format!(
+            "Project: {} | Rev: {} | Framing Lines: FL-1..FL-{} | Braced Bays: {:?}",
+            project_name, revision, ys.len(), b.braced_bays
+        ),
+        "TITLE_BLOCK",
+    );
+    text(
+        &mut d,
+        0.0,
+        -3100.0,
+        240.0,
+        &format!(
+            "Secondary Framing: {} Z-Purlins (Continuous Lap = {:.2}m) | {} C-Girts",
+            purlins, b.purlin_lap_m, girts
+        ),
+        "SCHEDULE",
+    );
+
+    d.push_str("0\nENDSEC\n0\nEOF\n");
+    d
+}
+
 /// 1:1 Fabrication DXF for a single piece assembly (dimensionless/mm-exact profile for CNC/CAD).
 pub fn piece_fabrication_dxf(part: &PartOccurrence) -> String {
     let mut d = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n".to_string();
