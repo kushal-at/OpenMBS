@@ -514,6 +514,393 @@ impl BuildingSpec {
 
         Ok(())
     }
+
+    /// Preset 1: 40' x 60' Agricultural Barndominium / Shop with Lean-To Porch
+    pub fn preset_ag_barndominium_40x60() -> Self {
+        Self {
+            width_m: 12.192,
+            bay_lengths_m: vec![6.096, 6.096, 6.096],
+            left_eave_m: 4.877,
+            right_eave_m: 4.877,
+            ridge_x_m: 6.096,
+            ridge_height_m: 6.401,
+            fixed_bases: false,
+            endwall_type: EndwallType::PostAndBeam,
+            endwall_post_bays: 2,
+            purlin_spacing_m: 1.372,
+            girt_spacing_m: 1.524,
+            flange_brace_spacing_m: 3.048,
+            braced_bays: vec![0, 2],
+            secondary_kg_per_m: 5.5,
+            panel_kg_per_m2: 4.8,
+            purlin_lap_m: 0.30,
+            openings: vec![
+                WallOpening {
+                    id: "OHD-1".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 6.5,
+                    sill_m: 0.0,
+                    width_m: 3.658,
+                    height_m: 4.267,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "WD-1".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 2.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+            ],
+            lean_tos: vec![LeanToSpec {
+                id: "LT-PORCH".into(),
+                wall: WallSide::LeftSidewall,
+                span_m: 3.658,
+                eave_height_m: 3.5,
+                slope: 0.15,
+                bay_start: 0,
+                bay_count: 3,
+            }],
+            canopies: vec![],
+            parapet: None,
+            cranes: vec![],
+            portal_frames: vec![],
+            mezzanines: vec![],
+            mini_storage: None,
+        }
+    }
+
+    /// Preset 2: 60' x 100' Commercial Warehouse with Loading Dock Canopy
+    pub fn preset_commercial_warehouse_60x100() -> Self {
+        Self {
+            width_m: 18.288,
+            bay_lengths_m: vec![7.620; 4],
+            left_eave_m: 6.096,
+            right_eave_m: 6.096,
+            ridge_x_m: 9.144,
+            ridge_height_m: 6.858,
+            fixed_bases: true,
+            endwall_type: EndwallType::PostAndBeam,
+            endwall_post_bays: 3,
+            purlin_spacing_m: 1.5,
+            girt_spacing_m: 1.5,
+            flange_brace_spacing_m: 3.0,
+            braced_bays: vec![0, 3],
+            secondary_kg_per_m: 6.2,
+            panel_kg_per_m2: 5.2,
+            purlin_lap_m: 0.30,
+            openings: vec![
+                WallOpening {
+                    id: "DOCK-1".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 8.0,
+                    sill_m: 0.0,
+                    width_m: 3.048,
+                    height_m: 3.658,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "DOCK-2".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 16.0,
+                    sill_m: 0.0,
+                    width_m: 3.048,
+                    height_m: 3.658,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "EXIT-1".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 2.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "EXIT-2".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 26.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+            ],
+            lean_tos: vec![],
+            canopies: vec![CanopySpec {
+                id: "CAN-DOCK".into(),
+                wall: WallSide::RightSidewall,
+                projection_m: 1.524,
+                height_m: 4.5,
+                bay_start: 1,
+                bay_count: 2,
+            }],
+            parapet: None,
+            cranes: vec![],
+            portal_frames: vec![],
+            mezzanines: vec![],
+            mini_storage: None,
+        }
+    }
+
+    /// Preset 3: 100' x 200' Industrial Manufacturing Facility with 10-Ton Overhead Crane
+    pub fn preset_industrial_crane_100x200() -> Self {
+        Self {
+            width_m: 30.480,
+            bay_lengths_m: vec![7.620; 8],
+            left_eave_m: 8.534,
+            right_eave_m: 8.534,
+            ridge_x_m: 15.240,
+            ridge_height_m: 9.804,
+            fixed_bases: true,
+            endwall_type: EndwallType::ExpandableRigidFrame,
+            endwall_post_bays: 4,
+            purlin_spacing_m: 1.5,
+            girt_spacing_m: 1.5,
+            flange_brace_spacing_m: 3.0,
+            braced_bays: vec![1, 6],
+            secondary_kg_per_m: 7.5,
+            panel_kg_per_m2: 5.8,
+            purlin_lap_m: 0.35,
+            openings: vec![
+                WallOpening {
+                    id: "EQ-1".into(),
+                    wall: WallSide::FrontEndwall,
+                    offset_m: 12.0,
+                    sill_m: 0.0,
+                    width_m: 5.486,
+                    height_m: 5.486,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "WD-IND1".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 2.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "WD-IND2".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 2.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+            ],
+            lean_tos: vec![],
+            canopies: vec![],
+            parapet: None,
+            cranes: vec![CraneSpec {
+                id: "CRANE-10T".into(),
+                capacity_metric_tons: 10.0,
+                runway_height_m: 6.5,
+                bracket_eccentricity_m: 0.40,
+                wheel_base_m: 3.5,
+                max_wheel_load_kn: 85.0,
+                lateral_thrust_pct: 10.0,
+            }],
+            portal_frames: vec![PortalFrameSpec {
+                bay_index: 3,
+                wall: WallSide::LeftSidewall,
+                clear_height_m: 5.5,
+            }],
+            mezzanines: vec![],
+            mini_storage: None,
+        }
+    }
+
+    /// Preset 4: 120' x 300' Distribution Logistics Center with Mezzanine & Perimeter Parapet
+    pub fn preset_distribution_center_120x300() -> Self {
+        Self {
+            width_m: 36.576,
+            bay_lengths_m: vec![9.144; 10],
+            left_eave_m: 9.754,
+            right_eave_m: 9.754,
+            ridge_x_m: 18.288,
+            ridge_height_m: 10.516,
+            fixed_bases: true,
+            endwall_type: EndwallType::ExpandableRigidFrame,
+            endwall_post_bays: 5,
+            purlin_spacing_m: 1.5,
+            girt_spacing_m: 1.5,
+            flange_brace_spacing_m: 3.0,
+            braced_bays: vec![1, 4, 8],
+            secondary_kg_per_m: 8.2,
+            panel_kg_per_m2: 6.0,
+            purlin_lap_m: 0.40,
+            openings: vec![
+                WallOpening {
+                    id: "DOCK-01".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 20.0,
+                    sill_m: 0.0,
+                    width_m: 2.743,
+                    height_m: 3.048,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "DOCK-02".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 25.0,
+                    sill_m: 0.0,
+                    width_m: 2.743,
+                    height_m: 3.048,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "DOCK-03".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 30.0,
+                    sill_m: 0.0,
+                    width_m: 2.743,
+                    height_m: 3.048,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "DOCK-04".into(),
+                    wall: WallSide::RightSidewall,
+                    offset_m: 35.0,
+                    sill_m: 0.0,
+                    width_m: 2.743,
+                    height_m: 3.048,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "EGRESS-1".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 5.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+                WallOpening {
+                    id: "EGRESS-2".into(),
+                    wall: WallSide::LeftSidewall,
+                    offset_m: 85.0,
+                    sill_m: 0.0,
+                    width_m: 0.914,
+                    height_m: 2.134,
+                    shop_framed: true,
+                },
+            ],
+            lean_tos: vec![],
+            canopies: vec![],
+            parapet: Some(ParapetSpec {
+                height_m: 0.914,
+                sidewalls: true,
+                endwalls: true,
+            }),
+            cranes: vec![],
+            portal_frames: vec![],
+            mezzanines: vec![MezzanineSpec {
+                id: "MEZZ-OFFICE".into(),
+                elevation_m: 4.267,
+                bay_start: 0,
+                bay_count: 2,
+                width_m: 12.192,
+                live_load_kpa: 2.5,
+                beam_spacing_m: 6.0,
+                joist_spacing_m: 1.5,
+                deck_type: "Composite Concrete on B-Deck".into(),
+            }],
+            mini_storage: None,
+        }
+    }
+
+    /// Preset 5: 30' x 90' Multi-Unit Self-Storage Building (MBS Mini-Storage)
+    pub fn preset_mini_storage_30x90() -> Self {
+        let mut openings = Vec::new();
+        for i in 0..9 {
+            openings.push(WallOpening {
+                id: format!("UNIT-{:02}", i + 1),
+                wall: WallSide::LeftSidewall,
+                offset_m: 0.30 + (i as f64) * 3.048,
+                sill_m: 0.0,
+                width_m: 2.438,
+                height_m: 2.134,
+                shop_framed: true,
+            });
+        }
+        Self {
+            width_m: 9.144,
+            bay_lengths_m: vec![3.048; 9],
+            left_eave_m: 3.048,
+            right_eave_m: 3.048,
+            ridge_x_m: 4.572,
+            ridge_height_m: 3.2385,
+            fixed_bases: false,
+            endwall_type: EndwallType::PostAndBeam,
+            endwall_post_bays: 2,
+            purlin_spacing_m: 1.2,
+            girt_spacing_m: 1.5,
+            flange_brace_spacing_m: 3.0,
+            braced_bays: vec![0, 4, 8],
+            secondary_kg_per_m: 4.5,
+            panel_kg_per_m2: 4.5,
+            purlin_lap_m: 0.25,
+            openings,
+            lean_tos: vec![],
+            canopies: vec![],
+            parapet: None,
+            cranes: vec![],
+            portal_frames: vec![],
+            mezzanines: vec![],
+            mini_storage: Some(MiniStorageSpec {
+                unit_width_m: 3.048,
+                unit_depth_m: 3.048,
+                corridor_width_m: 1.5,
+                unit_type: StorageUnitType::StandardDriveUp,
+                door_type: StorageDoorType::RollUp8x7,
+                partition_sheet_gauge: 26,
+                climate_controlled: false,
+                stepped_pad_elevation_m: 0.0,
+            }),
+        }
+    }
+
+    /// List of all standard industrial building presets with metadata.
+    pub fn presets() -> Vec<(&'static str, &'static str, &'static str, Self)> {
+        vec![
+            (
+                "ag_barndominium",
+                "Ag Barndominium / Shop (40' x 60')",
+                "Residential/Ag workshop with 12' lean-to porch and 12'x14' roll-up door",
+                Self::preset_ag_barndominium_40x60(),
+            ),
+            (
+                "commercial_warehouse",
+                "Commercial Warehouse (60' x 100')",
+                "Retail/distribution center with dual loading docks and 5' weather canopy",
+                Self::preset_commercial_warehouse_60x100(),
+            ),
+            (
+                "industrial_crane",
+                "Industrial Manufacturing (100' x 200')",
+                "Heavy manufacturing facility with 10-Ton bridge crane, portal frame, and oversized equipment door",
+                Self::preset_industrial_crane_100x200(),
+            ),
+            (
+                "distribution_center",
+                "Logistics Mega Center (120' x 300')",
+                "High-throughput logistics facility with office mezzanine, perimeter parapet, and 4 dock bays",
+                Self::preset_distribution_center_120x300(),
+            ),
+            (
+                "mini_storage",
+                "MBS Multi-Unit Self-Storage (30' x 90')",
+                "Drive-up self-storage complex with 9 roll-up doors and interior steel partitions",
+                Self::preset_mini_storage_30x90(),
+            ),
+        ]
+    }
 }
 
 /// Computes trimmed horizontal segments `[start, end]` along a wall after subtracting openings
@@ -593,5 +980,19 @@ mod tests {
         assert!(b.validate().is_ok());
         b.openings[0].height_m = 6.20;
         assert!(b.validate().is_err());
+    }
+
+    #[test]
+    fn all_flagship_presets_pass_validation() {
+        for (id, title, _desc, preset) in BuildingSpec::presets() {
+            let res = preset.validate();
+            assert!(
+                res.is_ok(),
+                "Preset '{}' ({}) failed validation: {:?}",
+                id,
+                title,
+                res.err()
+            );
+        }
     }
 }
