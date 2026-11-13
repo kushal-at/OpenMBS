@@ -30,6 +30,11 @@ pub enum PartCategory {
     ParapetMember,
     CraneRunway,
     PortalBent,
+    MezzanineBeam,
+    MezzanineJoist,
+    MezzanineColumn,
+    MiniStoragePartition,
+    MiniStorageDoor,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1257,6 +1262,155 @@ pub fn build_detail_model(
                 holes: vec![],
                 weld_note: None,
             });
+        }
+    }
+
+    // Mezzanines (F-0105)
+    for mz in &b.mezzanines {
+        let y_start = frame_ys[mz.bay_start];
+        let y_end = frame_ys[(mz.bay_start + mz.bay_count).min(frame_ys.len() - 1)];
+        // Longitudinal floor girder
+        parts.push(PartOccurrence {
+            occurrence_id: format!("MEZZ-{}-GIRDER", mz.id),
+            piece_mark: format!("MZ-GDR-{:.1}", mz.width_m),
+            assembly_mark: format!("MEZZ-{}", mz.id),
+            category: PartCategory::MezzanineBeam,
+            description: format!("Mezzanine primary floor girder ({})", mz.deck_type),
+            material_id: "ASTM A992".into(),
+            finish_code: finish_code.into(),
+            location_tag: format!("Mezzanine {}", mz.id),
+            start_m: [0.0, y_start, mz.elevation_m],
+            end_m: [mz.width_m, y_start, mz.elevation_m],
+            depth_start_m: 0.40,
+            depth_end_m: 0.40,
+            width_m: 0.20,
+            length_m: mz.width_m,
+            mass_kg: mz.width_m * 52.0,
+            bbox: Aabb3::from_points(
+                [0.0, y_start, mz.elevation_m],
+                [mz.width_m, y_start, mz.elevation_m],
+                0.15,
+            ),
+            holes: vec![],
+            weld_note: None,
+        });
+        // Mezzanine joists
+        let num_joists = ((y_end - y_start) / mz.joist_spacing_m.max(0.5)).ceil() as usize;
+        for j in 0..=num_joists {
+            let y_j = y_start + (j as f64) * mz.joist_spacing_m;
+            if y_j <= y_end {
+                parts.push(PartOccurrence {
+                    occurrence_id: format!("MEZZ-{}-JOIST-{}", mz.id, j + 1),
+                    piece_mark: format!("MZ-JST-{:.1}", mz.width_m),
+                    assembly_mark: format!("MEZZ-{}", mz.id),
+                    category: PartCategory::MezzanineJoist,
+                    description: "Mezzanine intermediate floor joist".into(),
+                    material_id: "ASTM A572-50".into(),
+                    finish_code: finish_code.into(),
+                    location_tag: format!("Mezzanine {}", mz.id),
+                    start_m: [0.0, y_j, mz.elevation_m],
+                    end_m: [mz.width_m, y_j, mz.elevation_m],
+                    depth_start_m: 0.30,
+                    depth_end_m: 0.30,
+                    width_m: 0.15,
+                    length_m: mz.width_m,
+                    mass_kg: mz.width_m * 28.0,
+                    bbox: Aabb3::from_points(
+                        [0.0, y_j, mz.elevation_m],
+                        [mz.width_m, y_j, mz.elevation_m],
+                        0.10,
+                    ),
+                    holes: vec![],
+                    weld_note: None,
+                });
+            }
+        }
+        // Mezzanine support columns
+        parts.push(PartOccurrence {
+            occurrence_id: format!("MEZZ-{}-COL-INT", mz.id),
+            piece_mark: format!("MZ-COL-{:.1}", mz.elevation_m),
+            assembly_mark: format!("MEZZ-{}", mz.id),
+            category: PartCategory::MezzanineColumn,
+            description: "Mezzanine interior HSS column".into(),
+            material_id: "ASTM A500 Gr B".into(),
+            finish_code: finish_code.into(),
+            location_tag: format!("Mezzanine {}", mz.id),
+            start_m: [mz.width_m / 2.0, y_start, 0.0],
+            end_m: [mz.width_m / 2.0, y_start, mz.elevation_m],
+            depth_start_m: 0.20,
+            depth_end_m: 0.20,
+            width_m: 0.20,
+            length_m: mz.elevation_m,
+            mass_kg: mz.elevation_m * 35.0,
+            bbox: Aabb3::from_points(
+                [mz.width_m / 2.0, y_start, 0.0],
+                [mz.width_m / 2.0, y_start, mz.elevation_m],
+                0.12,
+            ),
+            holes: vec![],
+            weld_note: None,
+        });
+    }
+
+    // Mini-Storage Units & Partitions (F-0106)
+    if let Some(ref ms) = b.mini_storage {
+        let total_y = b.total_length_m();
+        let num_units_y = (total_y / ms.unit_depth_m.max(1.0)).floor() as usize;
+        let num_units_x = (b.width_m / ms.unit_width_m.max(1.0)).floor() as usize;
+        for ux in 0..num_units_x.min(8) {
+            let x = (ux as f64) * ms.unit_width_m;
+            for uy in 0..num_units_y.min(12) {
+                let y = (uy as f64) * ms.unit_depth_m;
+                // Partition wall sheet occurrence
+                parts.push(PartOccurrence {
+                    occurrence_id: format!("MS-PART-X{ux}-Y{uy}"),
+                    piece_mark: format!("MS-PART-{}GA", ms.partition_sheet_gauge),
+                    assembly_mark: "MINI-STORAGE".into(),
+                    category: PartCategory::MiniStoragePartition,
+                    description: format!(
+                        "Mini-storage interior partition wall ({} Ga)",
+                        ms.partition_sheet_gauge
+                    ),
+                    material_id: "ASTM A653 Gr 55".into(),
+                    finish_code: finish_code.into(),
+                    location_tag: format!("Unit X{}Y{}", ux + 1, uy + 1),
+                    start_m: [x, y, ms.stepped_pad_elevation_m],
+                    end_m: [x + ms.unit_width_m, y, 3.0],
+                    depth_start_m: 0.05,
+                    depth_end_m: 0.05,
+                    width_m: ms.unit_width_m,
+                    length_m: ms.unit_width_m,
+                    mass_kg: ms.unit_width_m * 8.5,
+                    bbox: Aabb3::from_points(
+                        [x, y, ms.stepped_pad_elevation_m],
+                        [x + ms.unit_width_m, y, 3.0],
+                        0.05,
+                    ),
+                    holes: vec![],
+                    weld_note: None,
+                });
+                // Storage Unit Door
+                parts.push(PartOccurrence {
+                    occurrence_id: format!("MS-DOOR-X{ux}-Y{uy}"),
+                    piece_mark: "MS-DR-ROLLUP".into(),
+                    assembly_mark: "MINI-STORAGE".into(),
+                    category: PartCategory::MiniStorageDoor,
+                    description: format!("Mini-storage unit door ({:?})", ms.door_type),
+                    material_id: "Galvanized Steel".into(),
+                    finish_code: finish_code.into(),
+                    location_tag: format!("Unit X{}Y{}", ux + 1, uy + 1),
+                    start_m: [x, y, 0.0],
+                    end_m: [x, y, 2.13],
+                    depth_start_m: 0.05,
+                    depth_end_m: 0.05,
+                    width_m: 2.44,
+                    length_m: 2.13,
+                    mass_kg: 42.0,
+                    bbox: Aabb3::from_points([x, y, 0.0], [x + 2.44, y, 2.13], 0.05),
+                    holes: vec![],
+                    weld_note: None,
+                });
+            }
         }
     }
 

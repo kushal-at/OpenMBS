@@ -136,6 +136,46 @@ pub struct PortalFrameSpec {
     pub clear_height_m: f64,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MezzanineSpec {
+    pub id: String,
+    pub elevation_m: f64,
+    pub bay_start: usize,
+    pub bay_count: usize,
+    pub width_m: f64,
+    pub live_load_kpa: f64,
+    pub beam_spacing_m: f64,
+    pub joist_spacing_m: f64,
+    pub deck_type: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StorageUnitType {
+    StandardDriveUp,
+    ClimateControlled,
+    InteriorCorridor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StorageDoorType {
+    RollUp8x7,
+    RollUp9x7,
+    RollUp10x10,
+    SwingingWalk3x7,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MiniStorageSpec {
+    pub unit_width_m: f64,
+    pub unit_depth_m: f64,
+    pub corridor_width_m: f64,
+    pub unit_type: StorageUnitType,
+    pub door_type: StorageDoorType,
+    pub partition_sheet_gauge: u32,
+    pub climate_controlled: bool,
+    pub stepped_pad_elevation_m: f64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndwallType {
     /// Post-and-beam endwall with corner/wind columns and lighter endwall rafters.
@@ -176,6 +216,10 @@ pub struct BuildingSpec {
     pub cranes: Vec<CraneSpec>,
     #[serde(default)]
     pub portal_frames: Vec<PortalFrameSpec>,
+    #[serde(default)]
+    pub mezzanines: Vec<MezzanineSpec>,
+    #[serde(default)]
+    pub mini_storage: Option<MiniStorageSpec>,
 }
 
 impl Default for BuildingSpec {
@@ -203,6 +247,8 @@ impl Default for BuildingSpec {
             parapet: None,
             cranes: vec![],
             portal_frames: vec![],
+            mezzanines: vec![],
+            mini_storage: None,
         }
     }
 }
@@ -417,39 +463,6 @@ impl BuildingSpec {
                 return Err(format!("Canopy {} extends beyond building bays", can.id));
             }
         }
-        if let Some(ref p) = self.parapet
-            && !(0.1..=10.0).contains(&p.height_m)
-        {
-            return Err("Parapet height must be between 0.1 m and 10 m".into());
-        }
-        for cr in &self.cranes {
-            if cr.capacity_metric_tons <= 0.0 || cr.runway_height_m <= 0.0 {
-                return Err(format!(
-                    "Crane {} has non-positive capacity or height",
-                    cr.id
-                ));
-            }
-            if cr.runway_height_m > self.left_eave_m.min(self.right_eave_m) {
-                return Err(format!("Crane {} runway is higher than column eave", cr.id));
-            }
-        }
-        for pf in &self.portal_frames {
-            if pf.bay_index >= self.bay_lengths_m.len() {
-                return Err(format!(
-                    "Portal frame bay {} out of range",
-                    pf.bay_index + 1
-                ));
-            }
-        }
-
-        for lt in &self.lean_tos {
-            if lt.span_m <= 0.0 || lt.eave_height_m <= 0.0 || lt.bay_count == 0 {
-                return Err(format!("Lean-to {} has non-positive geometry", lt.id));
-            }
-            if lt.bay_start + lt.bay_count > self.bay_lengths_m.len() {
-                return Err(format!("Lean-to {} extends beyond building bays", lt.id));
-            }
-        }
         for can in &self.canopies {
             if can.projection_m <= 0.0 || can.bay_count == 0 {
                 return Err(format!("Canopy {} has non-positive geometry", can.id));
@@ -481,6 +494,22 @@ impl BuildingSpec {
                     pf.bay_index + 1
                 ));
             }
+        }
+        for mz in &self.mezzanines {
+            if mz.elevation_m <= 0.0 || mz.width_m <= 0.0 || mz.bay_count == 0 {
+                return Err(format!("Mezzanine {} has non-positive geometry", mz.id));
+            }
+            if mz.bay_start + mz.bay_count > self.bay_lengths_m.len() {
+                return Err(format!("Mezzanine {} extends beyond building bays", mz.id));
+            }
+            if mz.elevation_m >= self.left_eave_m.min(self.right_eave_m) {
+                return Err(format!("Mezzanine {} elevation exceeds eave height", mz.id));
+            }
+        }
+        if let Some(ref ms) = self.mini_storage
+            && (ms.unit_width_m <= 0.0 || ms.unit_depth_m <= 0.0)
+        {
+            return Err("Mini-storage has non-positive unit geometry".into());
         }
 
         Ok(())

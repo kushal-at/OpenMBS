@@ -9,8 +9,8 @@ use openmbs_codes::{
 };
 use openmbs_detailing::{DetailModel, PartCategory, build_detail_model};
 use openmbs_drawings::{
-    DrawingControl, anchor_plan_svg, export_ifc4, piece_fabrication_dxf, shop_assembly_svg,
-    shop_sheet_marks,
+    DrawingControl, anchor_plan_svg, erection_plan_svg, export_ifc4, piece_fabrication_dxf,
+    shop_assembly_svg, shop_sheet_marks,
 };
 use openmbs_geometry::{BuildingSpec, EndwallType, WallOpening, WallSide};
 use openmbs_inventory::{
@@ -28,7 +28,120 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+pub struct CustomerInfo {
+    pub company_name: String,
+    pub contact_person: String,
+    pub email: String,
+    pub phone: String,
+    pub billing_address: String,
+    pub delivery_address: String,
+}
+
+impl Default for CustomerInfo {
+    fn default() -> Self {
+        Self {
+            company_name: "Apex Logistics Corp".into(),
+            contact_person: "John Doe".into(),
+            email: "jdoe@apexlogistics.com".into(),
+            phone: "+1 (555) 234-5678".into(),
+            billing_address: "100 Industrial Parkway, Chicago, IL 60601".into(),
+            delivery_address: "Site Lot 4B, Interstate Logistics Park, Joliet, IL".into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BuildingEntry {
+    pub id: String,
+    pub name: String,
+    pub position_m: [f64; 3],
+    pub rotation_deg: f64,
+    pub building: BuildingSpec,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ProjectLifecycleStage {
+    Inquiry,
+    #[default]
+    BuildingConfiguration,
+    EngineeringReview,
+    Detailing,
+    EstimationQuotation,
+    OrderApproved,
+    Manufacturing,
+    ShippingDispatch,
+    Completed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QuotationVersion {
+    pub version_id: String,
+    pub description: String,
+    pub total_cost_cents: u64,
+    pub selling_price_cents: u64,
+    pub margin_pct: f64,
+    pub steel_weight_kg: f64,
+    pub approved: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ManufacturingStage {
+    MaterialAllocation,
+    CNCPlateBurning,
+    FittingAssembly,
+    #[default]
+    SubmergedArcWelding,
+    DrillingPunching,
+    BlastAndPaint,
+    FinalInspection,
+    Packaged,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ManufacturingWorkOrder {
+    pub order_id: String,
+    pub building_id: String,
+    pub batch_id: String,
+    pub current_stage: ManufacturingStage,
+    pub total_pieces: usize,
+    pub completed_pieces: usize,
+    pub target_date: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum DispatchStatus {
+    StagedInYard,
+    #[default]
+    LoadedOnTrailer,
+    DispatchedInTransit,
+    DeliveredToSite,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShipmentPhase {
+    pub shipment_id: String,
+    pub trailer_number: usize,
+    pub max_payload_kg: f64,
+    pub assigned_weight_kg: f64,
+    pub piece_count: usize,
+    pub dispatch_status: DispatchStatus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UserRole {
+    Administrator,
+    ProjectManager,
+    SalesEstimator,
+    #[default]
+    BuildingDesigner,
+    StructuralPE,
+    SteelDetailer,
+    ShopSupervisor,
+    QualityInspector,
+    ExecutiveViewer,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EngineeringProject {
     pub schema_version: u32,
     pub name: String,
@@ -48,6 +161,22 @@ pub struct EngineeringProject {
     pub drawing_control: DrawingControl,
     pub base_rates: Rates,
     pub engineer_approved_by: Option<String>,
+    #[serde(default)]
+    pub customer_info: CustomerInfo,
+    #[serde(default)]
+    pub lifecycle_stage: ProjectLifecycleStage,
+    #[serde(default)]
+    pub buildings: Vec<BuildingEntry>,
+    #[serde(default)]
+    pub active_building_index: usize,
+    #[serde(default)]
+    pub quotations: Vec<QuotationVersion>,
+    #[serde(default)]
+    pub work_orders: Vec<ManufacturingWorkOrder>,
+    #[serde(default)]
+    pub shipments: Vec<ShipmentPhase>,
+    #[serde(default)]
+    pub user_role: UserRole,
 }
 
 impl Default for EngineeringProject {
@@ -83,6 +212,101 @@ impl Default for EngineeringProject {
                 markup_basis_points: 1500,
             },
             engineer_approved_by: None,
+            customer_info: CustomerInfo::default(),
+            lifecycle_stage: ProjectLifecycleStage::BuildingConfiguration,
+            buildings: vec![
+                BuildingEntry {
+                    id: "BLD-001".into(),
+                    name: "Main Production Plant".into(),
+                    position_m: [0.0, 0.0, 0.0],
+                    rotation_deg: 0.0,
+                    building: BuildingSpec::default(),
+                },
+                BuildingEntry {
+                    id: "BLD-002".into(),
+                    name: "Storage Warehouse".into(),
+                    position_m: [40.0, 0.0, 0.0],
+                    rotation_deg: 0.0,
+                    building: BuildingSpec {
+                        width_m: 18.0,
+                        bay_lengths_m: vec![6.0; 4],
+                        left_eave_m: 5.0,
+                        right_eave_m: 5.0,
+                        ridge_x_m: 9.0,
+                        ridge_height_m: 5.9,
+                        ..BuildingSpec::default()
+                    },
+                },
+            ],
+            active_building_index: 0,
+            quotations: vec![
+                QuotationVersion {
+                    version_id: "V1".into(),
+                    description: "Standard Spec (26 Ga Roof, Primer Finish)".into(),
+                    total_cost_cents: 18_500_000,
+                    selling_price_cents: 22_200_000,
+                    margin_pct: 20.0,
+                    steel_weight_kg: 78_500.0,
+                    approved: true,
+                },
+                QuotationVersion {
+                    version_id: "V2".into(),
+                    description: "Architectural (24 Ga Standing Seam Roof)".into(),
+                    total_cost_cents: 20_400_000,
+                    selling_price_cents: 24_880_000,
+                    margin_pct: 22.0,
+                    steel_weight_kg: 81_200.0,
+                    approved: false,
+                },
+                QuotationVersion {
+                    version_id: "V3".into(),
+                    description: "High-R Thermal Cavity Insulation (R-30)".into(),
+                    total_cost_cents: 22_600_000,
+                    selling_price_cents: 27_572_000,
+                    margin_pct: 22.0,
+                    steel_weight_kg: 82_400.0,
+                    approved: false,
+                },
+            ],
+            work_orders: vec![
+                ManufacturingWorkOrder {
+                    order_id: "WO-2026-001".into(),
+                    building_id: "BLD-001".into(),
+                    batch_id: "BATCH-COL-01".into(),
+                    current_stage: ManufacturingStage::SubmergedArcWelding,
+                    total_pieces: 14,
+                    completed_pieces: 8,
+                    target_date: "2026-11-28".into(),
+                },
+                ManufacturingWorkOrder {
+                    order_id: "WO-2026-002".into(),
+                    building_id: "BLD-001".into(),
+                    batch_id: "BATCH-RAF-01".into(),
+                    current_stage: ManufacturingStage::CNCPlateBurning,
+                    total_pieces: 28,
+                    completed_pieces: 12,
+                    target_date: "2026-12-05".into(),
+                },
+            ],
+            shipments: vec![
+                ShipmentPhase {
+                    shipment_id: "TRUCK-01".into(),
+                    trailer_number: 1,
+                    max_payload_kg: 20_411.0,
+                    assigned_weight_kg: 18_650.0,
+                    piece_count: 24,
+                    dispatch_status: DispatchStatus::LoadedOnTrailer,
+                },
+                ShipmentPhase {
+                    shipment_id: "TRUCK-02".into(),
+                    trailer_number: 2,
+                    max_payload_kg: 20_411.0,
+                    assigned_weight_kg: 19_200.0,
+                    piece_count: 56,
+                    dispatch_status: DispatchStatus::StagedInYard,
+                },
+            ],
+            user_role: UserRole::BuildingDesigner,
         }
     }
 }
@@ -1019,6 +1243,13 @@ pub fn export_peb_bundle(p: &EngineeringProject, r: &EngineeringRun, path: &Path
         max_uplift_kn,
         max_shear_kn,
     );
+    let er1_svg = erection_plan_svg(
+        &p.name,
+        &r.revision,
+        &p.building,
+        &r.detail,
+        &p.drawing_control,
+    );
     let ifc = export_ifc4(&p.name, &r.detail);
     let verify_txt = format_verify_report(p, r);
     let cert_letter = openmbs_codes::generate_pe_certification_letter(
@@ -1048,6 +1279,7 @@ pub fn export_peb_bundle(p: &EngineeringProject, r: &EngineeringRun, path: &Path
         ("verify_report.txt".into(), verify_txt.into_bytes()),
         ("certification_letter.txt".into(), cert_letter.into_bytes()),
         ("sheet_E1_anchor_plan.svg".into(), e1_svg.into_bytes()),
+        ("sheet_ER1_erection_plan.svg".into(), er1_svg.into_bytes()),
         ("model.ifc".into(), ifc.into_bytes()),
     ];
 

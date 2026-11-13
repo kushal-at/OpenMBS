@@ -299,6 +299,128 @@ pub fn shop_assembly_svg(
     s
 }
 
+/// Sheet ER1: Roof & Wall Framing Erection Plan (SVG).
+pub fn erection_plan_svg(
+    project_name: &str,
+    revision: &str,
+    b: &BuildingSpec,
+    detail: &DetailModel,
+    ctrl: &DrawingControl,
+) -> String {
+    let sys = ctrl.unit_system;
+    let total_len = b.total_length_m();
+    let ys = b.frame_y_positions();
+    let scale = (960.0 / total_len).min(460.0 / b.width_m);
+    let ox = 110.0;
+    let oy = 120.0;
+
+    let mut s = String::with_capacity(8192);
+    let _ = writeln!(
+        s,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 840"><rect width="1200" height="840" fill="#f8fafc"/><rect x="20" y="20" width="1160" height="800" fill="none" stroke="#1e293b" stroke-width="2"/><g font-family="Consolas, monospace" fill="#0f172a">"##
+    );
+    let _ = writeln!(
+        s,
+        r##"<text x="40" y="52" font-size="22" font-weight="bold">{} — ROOF &amp; WALL ERECTION FRAMING PLAN (SHEET ER1)</text><text x="40" y="76" font-size="12" fill="#475569">Project: {} | Rev: {} | Framing Out-to-Out: {} x {} | FIELD ERECTION DRAWING</text>"##,
+        xml(&ctrl.title_company),
+        xml(project_name),
+        &revision[..revision.len().min(12)],
+        fmt_dim(b.width_m, sys),
+        fmt_dim(total_len, sys),
+    );
+
+    let w_px = total_len * scale;
+    let h_px = b.width_m * scale;
+    let _ = writeln!(
+        s,
+        r##"<rect x="{ox}" y="{oy}" width="{w_px}" height="{h_px}" fill="#f1f5f9" stroke="#0284c7" stroke-width="2"/>"##
+    );
+
+    // Frame grid lines
+    for (idx, &y) in ys.iter().enumerate() {
+        let gx = ox + y * scale;
+        let _ = writeln!(
+            s,
+            r##"<line x1="{gx}" y1="{}" x2="{gx}" y2="{}" stroke="#334155" stroke-width="2"/><circle cx="{gx}" cy="{}" r="11" fill="white" stroke="#0f172a"/><text x="{gx}" y="{}" text-anchor="middle" font-size="11">{}</text><text x="{gx}" y="{}" font-size="9" fill="#0284c7">FL-{}</text>"##,
+            oy - 10.0,
+            oy + h_px + 10.0,
+            oy - 30.0,
+            oy - 26.0,
+            idx + 1,
+            oy + 14.0,
+            idx + 1
+        );
+    }
+
+    // Longitudinal purlin run lines
+    let num_purlin_runs = (b.width_m / b.purlin_spacing_m.max(0.5)).floor() as usize;
+    for p_idx in 1..num_purlin_runs {
+        let py = oy + (p_idx as f64) * b.purlin_spacing_m * scale;
+        if py < oy + h_px {
+            let _ = writeln!(
+                s,
+                r##"<line x1="{ox}" y1="{py}" x2="{}" y2="{py}" stroke="#64748b" stroke-width="1" stroke-dasharray="8,3"/><text x="{}" y="{}" font-size="8" fill="#64748b">PURLIN-{}</text>"##,
+                ox + w_px,
+                ox + 6.0,
+                py - 2.0,
+                p_idx
+            );
+        }
+    }
+
+    // Diagonal X-Braces in Braced Bays
+    for &bb in &b.braced_bays {
+        if bb < b.bay_lengths_m.len() {
+            let x0 = ox + ys[bb] * scale;
+            let x1 = ox + ys[bb + 1] * scale;
+            let _ = writeln!(
+                s,
+                r##"<line x1="{x0}" y1="{oy}" x2="{x1}" y2="{}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5,3"/><line x1="{x0}" y1="{}" x2="{x1}" y2="{oy}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5,3"/><text x="{}" y="{}" text-anchor="middle" font-size="10" fill="#dc2626" font-weight="bold">ROOF X-BRACE (Bay {})</text>"##,
+                oy + h_px,
+                oy + h_px,
+                0.5 * (x0 + x1),
+                oy + 0.5 * h_px,
+                bb + 1
+            );
+        }
+    }
+
+    // Piece mark callout table
+    let purlins = detail
+        .parts
+        .iter()
+        .filter(|p| p.category == PartCategory::Purlin)
+        .count();
+    let girts = detail
+        .parts
+        .iter()
+        .filter(|p| {
+            p.category == PartCategory::SidewallGirt || p.category == PartCategory::EndwallGirt
+        })
+        .count();
+    let frames = ys.len();
+    let _ = writeln!(
+        s,
+        r##"<rect x="40" y="{}" width="1120" height="150" fill="#ffffff" stroke="#cbd5e1"/><text x="55" y="{}" font-size="13" font-weight="bold">ERECTION COMPONENT SCHEDULE</text><text x="55" y="{}" font-size="11">Rigid Frames: {} lines (FL-1 to FL-{}) | Primary Splice Plates: DG-4 Moment End-Plates</text><text x="55" y="{}" font-size="11">Roof Secondary: {} Cold-Formed Z-Purlins (Continuous Lap = {:.2} m) | Flange Bracing Spacing = {:.2} m</text><text x="55" y="{}" font-size="11">Wall Secondary: {} Cold-Formed C-Girts | Braced Bays: {:?}</text><text x="55" y="{}" font-size="10" fill="#475569">NOTE: Verify all anchor bolt locations per Sheet E1 prior to frame erection. Torque A325 bolts to calibrated values.</text>"##,
+        (oy + h_px + 50.0).min(650.0),
+        (oy + h_px + 75.0).min(675.0),
+        (oy + h_px + 98.0).min(698.0),
+        frames,
+        frames,
+        (oy + h_px + 120.0).min(720.0),
+        purlins,
+        b.purlin_lap_m,
+        b.flange_brace_spacing_m,
+        (oy + h_px + 142.0).min(742.0),
+        girts,
+        b.braced_bays,
+        (oy + h_px + 168.0).min(768.0),
+    );
+
+    s.push_str("</g></svg>");
+    s
+}
+
 /// 1:1 Fabrication DXF for a single piece assembly (dimensionless/mm-exact profile for CNC/CAD).
 pub fn piece_fabrication_dxf(part: &PartOccurrence) -> String {
     let mut d = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n".to_string();
